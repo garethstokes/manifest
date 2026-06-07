@@ -37,6 +37,10 @@ module Manifest
   , load
   , HasRelation(..)
   , Card(..)
+    -- * Cascades (onDelete)
+  , OnDelete(..)
+  , CascadeRule(..)
+  , cascade
     -- * Relationships (D path)
   , Ent(..)
   , manage
@@ -69,6 +73,11 @@ import Manifest.Core.Query
 import Manifest.Core.Relation
   ( HasRelation(..)
   , Card(..)
+  , cascade
+  )
+import Manifest.Core.Cascade
+  ( OnDelete(..)
+  , CascadeRule(..)
   )
 import Manifest.Relation
   ( load

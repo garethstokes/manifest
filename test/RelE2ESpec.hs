@@ -46,4 +46,12 @@ tests = group "RelE2E"
         assertEqual "author" "Ada" authorName
         assertEqual "joined titles" ["P1", "P2"] joinedTitles
         assertBool "joined used a LEFT JOIN" usedJoin
+  , test "cascade-on-delete through the public API" $
+      withTestDb $ \pool -> do
+        n <- withSession pool $ do
+          u <- add (User { userId = 0, userName = "Ada", userEmail = Nothing } :: User)
+          _ <- add (Post { postId = 0, postAuthor = userId u, postTitle = "P1" } :: Post)
+          withTransaction $ delete u            -- User's cascadeRules cascade-delete posts
+          length <$> selectWhere ([] :: [Cond Post])
+        assertEqual "posts cascaded" 0 n
   ]
