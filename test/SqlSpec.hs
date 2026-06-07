@@ -46,4 +46,18 @@ tests = group "Query"
         " WHERE user_name = $1 AND user_id > $2"
         (fst (renderConds 1 [ Cond "user_name" OpEq (Just (BC.pack "Bob"))
                             , Cond "user_id"   OpGt (Just (BC.pack "3")) ]))
+  , test "renderJoined (reverse FK: User has-many Posts)" $
+      assertEqual "join"
+        "SELECT posts.post_id, posts.post_author, posts.post_title \
+        \FROM users LEFT JOIN posts ON posts.post_author = users.user_id \
+        \WHERE users.user_id = $1"
+        (renderJoined "users" "user_id" "posts"
+           ["post_id", "post_author", "post_title"] "post_author" "user_id")
+  , test "renderJoined (forward FK: Post belongs-to User)" $
+      assertEqual "join"
+        "SELECT users.user_id, users.user_name, users.user_email \
+        \FROM posts LEFT JOIN users ON users.user_id = posts.post_author \
+        \WHERE posts.post_id = $1"
+        (renderJoined "posts" "post_id" "users"
+           ["user_id", "user_name", "user_email"] "user_id" "post_author")
   ]

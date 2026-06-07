@@ -4,6 +4,7 @@ module Manifest.Core.Sql
   , renderInsert
   , renderUpdate
   , renderDelete
+  , renderJoined
   ) where
 
 import Data.ByteString (ByteString)
@@ -64,3 +65,24 @@ renderUpdate tm setCols pkCol =
 renderDelete :: TableMeta a -> ByteString -> ByteString
 renderDelete tm pkCol =
   "DELETE FROM " <> tmTable tm <> " WHERE " <> pkCol <> " = " <> placeholder 1
+
+-- | A single LEFT JOIN that selects only the CHILD/target columns (qualified),
+-- for loading one entity's relation. The owning row is pinned by its PK.
+--
+--   SELECT <child>.<c1>, <child>.<c2>, ...
+--   FROM <self> LEFT JOIN <child> ON <child>.<onChild> = <self>.<onSelf>
+--   WHERE <self>.<selfPk> = $1
+renderJoined
+  :: ByteString    -- ^ self (owning) table
+  -> ByteString    -- ^ self PK column (the WHERE pin)
+  -> ByteString    -- ^ child/target table
+  -> [ByteString]  -- ^ child/target column names (in tableMeta order)
+  -> ByteString    -- ^ join: child-side column
+  -> ByteString    -- ^ join: self-side column
+  -> ByteString
+renderJoined selfT selfPk childT childCols onChild onSelf =
+  "SELECT " <> bcIntercalate ", " [childT <> "." <> c | c <- childCols]
+    <> " FROM " <> selfT
+    <> " LEFT JOIN " <> childT
+    <> " ON " <> childT <> "." <> onChild <> " = " <> selfT <> "." <> onSelf
+    <> " WHERE " <> selfT <> "." <> selfPk <> " = $1"
