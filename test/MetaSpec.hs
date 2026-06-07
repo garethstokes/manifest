@@ -7,7 +7,10 @@ import Data.Functor.Identity (Identity)
 import Data.Text (Text)
 import Manifest.Core.Table (Base, Col, FieldMeta (..), PrimaryKey, Serial)
 import Manifest.Core.Meta (ColumnMeta (..), TableMeta (..), genericTableMeta)
-import Fixtures (UserT)
+import Fixtures (User, UserT (..))
+import Manifest.Entity (Entity (..), pkParam)
+import Manifest.Core.Codec (decodeRow)
+import qualified Data.ByteString.Char8 as BC
 import Harness
 
 -- Compile-time proofs that Base/Col reduce as intended (won't compile otherwise).
@@ -38,4 +41,21 @@ tests = group "Table"
         , ColumnMeta "user_email" False False
         ]
         (tmColumns tm)
+  , test "rowEncode encodes a User to its column vector in table order" $ do
+      let u = User { userId = 7, userName = "Bob", userEmail = Just "b@x.io" } :: User
+      assertEqual "row"
+        [ Just (BC.pack "7"), Just (BC.pack "Bob"), Just (BC.pack "b@x.io") ]
+        (rowEncode u)
+  , test "rowEncode encodes a NULL email as Nothing" $ do
+      let u = User { userId = 7, userName = "Bob", userEmail = Nothing } :: User
+      assertEqual "row" [ Just (BC.pack "7"), Just (BC.pack "Bob"), Nothing ] (rowEncode u)
+  , test "row codec round-trips through decodeRow" $ do
+      let u = User { userId = 7, userName = "Bob", userEmail = Just "b@x.io" } :: User
+      assertEqual "roundtrip"
+        (Right (7 :: Int, "Bob" :: Text, Just "b@x.io" :: Maybe Text))
+        (fmap (\u' -> (userId u', userName u', userEmail u'))
+              (decodeRow (rowDecoder @User) (rowEncode u)))
+  , test "pkParam extracts the PK bytes" $ do
+      let u = User { userId = 7, userName = "Bob", userEmail = Nothing } :: User
+      assertEqual "pk" (Just (BC.pack "7")) (pkParam u)
   ]

@@ -13,6 +13,8 @@ import GHC.Generics (Generic)
 import System.Directory (removeDirectoryRecursive)
 import System.Process (callProcess, readProcess)
 import Manifest.Core.Table (Col, PrimaryKey, Serial)
+import Manifest.Core.Meta (genericTableMeta)
+import Manifest.Entity (Entity (..), genericRowDecoder, genericRowEncode)
 import Manifest.Postgres (Pool, closePool, execText, newPool, withConnection)
 
 -- | The example higher-kinded table. One declaration; @UserT Identity@ is the
@@ -25,6 +27,13 @@ data UserT f = User
 
 -- | The runtime row type: @userId :: Int, userName :: Text, userEmail :: Maybe Text@.
 type User = UserT Identity
+
+instance Entity User where
+  type PrimKey User = Int
+  tableMeta  = genericTableMeta @UserT "users"
+  rowDecoder = genericRowDecoder
+  rowEncode  = genericRowEncode
+  primKey    = userId
 
 -- | DDL for the example table. Column order matches UserT's field order; names
 -- are camelCase→snake_case with no prefix stripping (see plan §"Resolved open questions").
