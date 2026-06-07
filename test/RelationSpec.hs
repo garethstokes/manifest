@@ -7,6 +7,7 @@ module RelationSpec (tests) where
 import qualified Data.ByteString.Char8 as BC
 import Fixtures (Post, PostT (..), Profile, ProfileT (..), User, UserT (..), withTestDb)
 import Manifest.Core.Relation (RelSpec (..), relSpec)
+import Manifest.Entity (Key (..))
 import Manifest.Relation (load)
 import Manifest.Session
 import Harness
@@ -45,6 +46,25 @@ tests = group "Relation"
         log' <- withSession pool $ do
           u <- add (User { userId = 0, userName = "Ada", userEmail = Nothing } :: User)
           _ <- add (Post { postId = 0, postAuthor = userId u, postTitle = "P1" } :: Post)
+          ps <- load #posts u
+          let p = head ps :: Post
+          withTransaction $ save (p { postTitle = "Edited" } :: Post)
+          statementLog
+        assertEqual "minimal child update"
+          ["UPDATE posts SET post_title = $1 WHERE post_id = $2"]
+          (filter (BC.isPrefixOf "UPDATE" . fst) log' >>= \(s,_) -> [BC.unpack s])
+  , test "a child loaded in a FRESH session (not added there) is managed — isolates selectByFk setBaseline" $
+      withTestDb $ \pool -> do
+        pk <- withSession pool $ do
+          u <- add (User { userId = 0, userName = "Ada", userEmail = Nothing } :: User)
+          _ <- add (Post { postId = 0, postAuthor = userId u, postTitle = "P1" } :: Post)
+          pure (userId u)
+        -- New session: the loaded Post was NOT added here, so its ONLY baseline
+        -- source is selectByFk's setBaseline. Drop that and `save` throws
+        -- UnmanagedSave — so this genuinely isolates the §5.5 registration.
+        log' <- withSession pool $ do
+          mu <- get @User (Key pk)
+          let u = maybe (error "fresh-session user vanished") id mu :: User
           ps <- load #posts u
           let p = head ps :: Post
           withTransaction $ save (p { postTitle = "Edited" } :: Post)
