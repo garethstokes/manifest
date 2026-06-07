@@ -13,6 +13,7 @@ import qualified RelationSpec
 import qualified EntSpec
 import qualified RelationErrorSpec
 import qualified RelE2ESpec
+import qualified JoinedSpec
 
 main :: IO ()
-main = runTests (CodecSpec.tests ++ PostgresSpec.tests ++ MetaSpec.tests ++ SqlSpec.tests ++ SessionSpec.tests ++ FlushSpec.tests ++ CommandSpec.tests ++ EndToEndSpec.tests ++ RelationSpec.tests ++ EntSpec.tests ++ RelationErrorSpec.tests ++ RelE2ESpec.tests)
+main = runTests (CodecSpec.tests ++ PostgresSpec.tests ++ MetaSpec.tests ++ SqlSpec.tests ++ SessionSpec.tests ++ FlushSpec.tests ++ CommandSpec.tests ++ EndToEndSpec.tests ++ RelationSpec.tests ++ EntSpec.tests ++ RelationErrorSpec.tests ++ RelE2ESpec.tests ++ JoinedSpec.tests)

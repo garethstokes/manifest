@@ -1,6 +1,8 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE TypeApplications #-}
@@ -15,26 +17,34 @@ module Manifest.Relation.Loaded
   , getEnt
   , Strategy
   , selectin
+  , joined
   , Insert
   , with
   , Member
   , rel
   ) where
 
+import Control.Exception (throwIO)
+import Control.Monad.IO.Class (liftIO)
+import Data.ByteString (ByteString)
 import Data.Dynamic (Dynamic, fromDynamic, toDyn)
 import Data.Kind (Constraint, Type)
 import qualified Data.Map.Strict as Map
 import Data.Map.Strict (Map)
+import Data.Maybe (listToMaybe)
 import Data.Proxy (Proxy(..))
 import Data.Typeable (Typeable)
 import GHC.TypeError (Unsatisfiable, ErrorMessage(..))
 import GHC.TypeLits (CmpSymbol, KnownSymbol, Symbol, symbolVal)
-import Manifest.Core.Codec (ToField)
+import Manifest.Core.Codec (SqlParam, ToField)
+import Manifest.Core.Meta (ColumnMeta(..), TableMeta(..), pkColumn)
 import Manifest.Core.Query (Rel)
-import Manifest.Core.Relation (HasRelation(..))
-import Manifest.Entity (Entity, Key, PrimKey)
+import Manifest.Core.Relation (HasRelation(..), RelSpec(..))
+import Manifest.Core.Sql (renderJoined)
+import Manifest.Entity (Entity, Key, PrimKey, pkIndex, pkParam, tableMeta)
+import Manifest.Error (DbError(OtherError), DbException(..))
 import Manifest.Relation (loadRel)
-import Manifest.Session (Db, get)
+import Manifest.Session (Db, decodeRowDb, execDb, get, setBaseline)
 
 -- | Loaded relations, type-erased, keyed by relation name.
 type RelMap = Map String Dynamic
@@ -54,12 +64,16 @@ manage v = Ent v Map.empty
 getEnt :: (Entity a, ToField (PrimKey a)) => Key a -> Db (Maybe (Ent '[] a))
 getEnt k = fmap manage <$> get k
 
--- | A loading strategy for relation @name@. SP2 core has only @selectin@.
-data Strategy (name :: Symbol) = Selectin
+-- | A loading strategy for relation @name@.
+data Strategy (name :: Symbol) = Selectin | Joined
 
--- | The default (and only, in SP2 core) strategy: a separate SELECT.
+-- | The default strategy: a separate SELECT per relation.
 selectin :: Rel a name -> Strategy name
 selectin _ = Selectin
+
+-- | The @joined@ strategy: a single LEFT JOIN, decoded NULL-aware.
+joined :: Rel a name -> Strategy name
+joined _ = Joined
 
 -- | Add @name@ to the load-set (simple prepend; membership is all that matters).
 type family Insert (name :: Symbol) (loaded :: [Symbol]) :: [Symbol] where
@@ -69,9 +83,59 @@ type family Insert (name :: Symbol) (loaded :: [Symbol]) :: [Symbol] where
 with :: forall name a l.
         (HasRelation a name, KnownSymbol name, Typeable (Target a name))
      => Strategy name -> Ent l a -> Db (Ent (Insert name l) a)
-with _ (Ent v rels) = do
-  t <- loadRel @a @name v
+with strat (Ent v rels) = do
+  t <- case strat of
+         Selectin -> loadRel    @a @name v
+         Joined   -> joinedLoad @a @name v
   pure (Ent v (Map.insert (symbolVal (Proxy @name)) (toDyn t) rels))
+
+-- | The @joined@ strategy execution: load relation @name@ via a single LEFT
+-- JOIN that pins the owning row by its PK, then decode the child/target portion
+-- of each row (skipping LEFT-JOIN misses), wrapping by cardinality.
+joinedLoad :: forall a name. (HasRelation a name) => a -> Db (Target a name)
+joinedLoad parent = case relSpec @a @name of
+  RelMany childFk -> joinReverse childFk parent
+  RelOpt  childFk -> listToMaybe <$> joinReverse childFk parent
+  RelOne  selfFk  -> do
+    rs <- joinForward selfFk parent
+    case rs of
+      (x : _) -> pure x
+      []      -> liftIO (throwIO (DbException (OtherError "belongs-to (joined): target row missing")))
+
+-- | Reverse FK (has-many / has-opt): @SELECT child cols FROM self LEFT JOIN
+-- child ON child.<fk> = self.<pk> WHERE self.<pk> = $1@, decoded NULL-aware.
+joinReverse :: forall a c. (Entity a, Entity c) => ByteString -> a -> Db [c]
+joinReverse childFk parent = do
+  let selfTm  = tableMeta @a
+      childTm = tableMeta @c
+      sql = renderJoined (tmTable selfTm) (cmName (pkColumn selfTm))
+                         (tmTable childTm) (map cmName (tmColumns childTm))
+                         childFk (cmName (pkColumn selfTm))
+  rows <- execDb sql [pkParam parent]
+  decodeJoinRows @c rows
+
+-- | Forward FK (belongs-to): @SELECT target cols FROM self LEFT JOIN target ON
+-- target.<pk> = self.<fk> WHERE self.<pk> = $1@, decoded NULL-aware.
+joinForward :: forall a c. (Entity a, Entity c) => ByteString -> a -> Db [c]
+joinForward selfFk parent = do
+  let selfTm = tableMeta @a
+      tgtTm  = tableMeta @c
+      sql = renderJoined (tmTable selfTm) (cmName (pkColumn selfTm))
+                         (tmTable tgtTm) (map cmName (tmColumns tgtTm))
+                         (cmName (pkColumn tgtTm)) selfFk
+  rows <- execDb sql [pkParam parent]
+  decodeJoinRows @c rows
+
+-- | Decode child rows from a LEFT JOIN, skipping misses (child PK column is
+-- @NULL@), and register each surviving child so joined-loaded children are
+-- managed (consistent with selectin).
+decodeJoinRows :: forall c. Entity c => [[SqlParam]] -> Db [c]
+decodeJoinRows rows = do
+  let pkIx = pkIndex @c
+  fmap concat $ mapM (\row ->
+    if (row !! pkIx) == Nothing
+      then pure []
+      else do child <- decodeRowDb @c row; setBaseline child; pure [child]) rows
 
 -- | The custom message shown when reading a relation that isn't loaded.
 type NotLoaded (name :: Symbol) (a :: Type) =
