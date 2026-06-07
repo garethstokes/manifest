@@ -10,6 +10,31 @@
 
 ---
 
+## EXECUTION NOTES (2026-06-07, during build — these OVERRIDE the task text below)
+
+The toolchain reality diverged from the original plan in four ways. Apply these everywhere:
+
+1. **Test framework: NOT hspec — use `test/Harness.hs`** (a ~35-line zero-dependency harness). The
+   hspec git-pin closure (colour/ansi-terminal/QuickCheck) fights zinc's resolver, so we dropped it.
+   API: `runTests :: [Test] -> IO ()`, `group :: String -> [Test] -> [Test]`, `test :: String -> IO () -> Test`,
+   `assertBool :: String -> Bool -> IO ()`, `assertEqual :: (Eq a,Show a) => String -> a -> a -> IO ()`
+   (args are `expected actual`), `assertReturns :: (Eq a,Show a) => String -> a -> IO a -> IO ()`.
+   Each spec module exports `tests :: [Test]`; `test/Spec.hs` aggregates: `main = runTests (concat [CodecSpec.tests, ...])`.
+   Translate every `describe/it/shouldBe/shouldReturn` in the task text to this API. Failure = throw.
+2. **Test DB: NOT tmp-postgres — thin initdb/pg_ctl harness.** Task 3's `withTestDb` shells out (via the
+   `process` boot lib) to `initdb` + `pg_ctl` (from the devShell's `postgresql`) to spin an ephemeral
+   cluster on a unix socket in a temp dir, run, and tear down. No tmp-postgres dependency.
+3. **Transport: own libpq via the `postgresql-libpq` package**, pinned v0.11.0.0 with
+   `flags = { use-pkg-config = true }` (Simple pkgconfig provider). The test target carries
+   `ghc-options = ["-lpq"]` and the flake exports `LIBRARY_PATH=${pkgs.postgresql.lib}/lib` so the FFI links.
+4. **Build/test commands:** `nix develop -c zinc build` / `nix develop -c zinc test` (NOT cabal). After
+   editing `[dependencies]`, freeze with `nix develop -c zinc add <pkg> --yes`; the lock is `zinc.lock`.
+
+Task 1 is DONE (commit f8a47d7). Module code in the task text below is framework-agnostic and still
+correct — only the **test** blocks change to the Harness API.
+
+---
+
 ## Resolved open questions (from design §9)
 
 These were left open in `spec/manifest_design_v0_1.md` §9 and are **decided here** so the plan has no
