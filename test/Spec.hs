@@ -7,6 +7,7 @@ import qualified MetaSpec
 import qualified SqlSpec
 import qualified SessionSpec
 import qualified FlushSpec
+import qualified CommandSpec
 
 main :: IO ()
-main = runTests (CodecSpec.tests ++ PostgresSpec.tests ++ MetaSpec.tests ++ SqlSpec.tests ++ SessionSpec.tests ++ FlushSpec.tests)
+main = runTests (CodecSpec.tests ++ PostgresSpec.tests ++ MetaSpec.tests ++ SqlSpec.tests ++ SessionSpec.tests ++ FlushSpec.tests ++ CommandSpec.tests)
