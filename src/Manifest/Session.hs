@@ -13,6 +13,7 @@ module Manifest.Session
   , IdentityMap
   , withSession
   , execDb
+  , decodeRowDb
   , statementLog
   , setBaseline
   , lookupBaseline

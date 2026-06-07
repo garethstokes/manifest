@@ -4,9 +4,11 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Manifest.Core.Query
   ( Column(..)
+  , Rel(..)
   , Op(..)
   , Cond(..)
   , Assign(..)
@@ -18,7 +20,7 @@ import Data.ByteString (ByteString)
 import Data.Kind (Type)
 import Data.Proxy (Proxy(..))
 import GHC.OverloadedLabels (IsLabel(..))
-import GHC.TypeLits (KnownSymbol, symbolVal)
+import GHC.TypeLits (KnownSymbol, Symbol, symbolVal)
 import Manifest.Core.Codec (SqlParam, ToField(..))
 import Manifest.Core.Meta (camelToSnake)
 
@@ -29,6 +31,18 @@ newtype Column a (t :: Type) = Column { colName :: ByteString }
 
 instance (KnownSymbol name) => IsLabel name (Column a t) where
   fromLabel = Column (camelToSnake (symbolVal (Proxy @name)))
+
+-- | A typed reference to /relation/ @name@ of entity @a@. Unlike 'Column', whose
+-- phantom is the column's value type, a relation reference carries the relation
+-- name 'Symbol' itself in its phantom, so @#posts :: Rel User "posts"@ pins the
+-- relation @name@ from the @#label@ alone. This is what @load@ / @selectin@ take.
+newtype Rel a (name :: Symbol) = Rel ByteString
+
+-- | The single, non-overlapping instance: the label 'Symbol' /is/ the phantom, so
+-- @#posts@ unambiguously elaborates to @Rel a \"posts\"@. The @name ~ name'@
+-- equality lets GHC improve the phantom from the label (and vice-versa).
+instance (KnownSymbol name, name ~ name') => IsLabel name (Rel a name') where
+  fromLabel = Rel (camelToSnake (symbolVal (Proxy @name)))
 
 -- | Comparison operators supported in SP1.
 data Op = OpEq | OpNeq | OpGt | OpLt
