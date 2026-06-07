@@ -41,7 +41,7 @@ tests = group "Joined"
         (none, some) <- withSession pool $ do
           u  <- add (User { userId = 0, userName = "Ada", userEmail = Nothing } :: User)
           e0 <- with (joined #profile) (manage u)
-          _  <- add (Profile { profileId = 0, profileUser = userId u, profileBio = "hi" } :: Profile)
+          _  <- add (Profile { profileId = 0, profileUser = Just (userId u), profileBio = "hi" } :: Profile)
           e1 <- with (joined #profile) (manage u)
           pure (rel #profile e0, rel #profile e1)
         assertEqual "none" Nothing (fmap profileBio none)

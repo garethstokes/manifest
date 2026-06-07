@@ -26,6 +26,7 @@ module Manifest.Session
   , delete
   ) where
 
+import Control.Monad (void, unless)
 import Control.Monad.IO.Class (MonadIO(..))
 import Control.Exception (SomeException, throwIO, try)
 import Control.Monad.Trans.Reader (ReaderT(..), ask, runReaderT)
@@ -35,6 +36,7 @@ import Data.IORef
 import qualified Data.Map.Strict as Map
 import Data.Map.Strict (Map)
 import Type.Reflection (SomeTypeRep)
+import Manifest.Core.Cascade (OnDelete(..), CascadeRule(..))
 import Manifest.Core.Codec (SqlParam, ToField(..), decodeRow)
 import Manifest.Core.Meta (ColumnMeta(..), TableMeta(..), pkColumn, cmName, cmIsSerial, cmIsPK)
 import Manifest.Core.Query (Cond(..), Op(..))
@@ -201,14 +203,40 @@ flushSave a = do
                       (map snd changed ++ [pkParam a])
           setBaseline a
 
--- | Emit a DELETE for the record and drop it from the identity map.
+-- | Emit a DELETE for the record, applying onDelete cascades first, and drop it
+-- from the identity map. Cascades run in two passes: all 'Restrict' checks first
+-- (aborting the whole delete if any child exists, so nothing is partially
+-- mutated), then the mutating policies ('Cascade' DELETE / 'SetNull' UPDATE).
 flushDelete :: forall a. Entity a => a -> Db ()
 flushDelete a = do
-  let tm = tableMeta @a
-  _ <- execDb (renderDelete tm (cmName (pkColumn tm))) [pkParam a]
+  let tm     = tableMeta @a
+      parent = pkParam a
+      rules  = cascadeRules @a
+  -- 1. all Restrict checks first (abort the whole delete if any child exists)
+  mapM_ (restrictCheck parent) [r | r <- rules, crPolicy r == Restrict]
+  -- 2. then the mutating policies
+  mapM_ (applyMutating parent) [r | r <- rules, crPolicy r /= Restrict]
+  -- 3. delete the parent (unchanged from SP1)
+  _ <- execDb (renderDelete tm (cmName (pkColumn tm))) [parent]
   Db $ do
     sess <- ask
     liftIO $ modifyIORef' (sessIdentity sess) (Map.delete (identityKey a))
+
+-- | A 'Restrict' rule: fail the delete if the child table still has rows
+-- referencing the parent.
+restrictCheck :: SqlParam -> CascadeRule -> Db ()
+restrictCheck parent (CascadeRule childT fk _) = do
+  rows <- execDb ("SELECT 1 FROM " <> childT <> " WHERE " <> fk <> " = $1 LIMIT 1") [parent]
+  unless (null rows) $
+    liftIO (throwIO (DbException (OtherError ("onDelete Restrict: " <> show childT <> " still has children"))))
+
+-- | Apply a mutating cascade policy ('Cascade' DELETEs children, 'SetNull' NULLs
+-- their FK). 'Restrict' is a no-op here (handled by 'restrictCheck').
+applyMutating :: SqlParam -> CascadeRule -> Db ()
+applyMutating parent (CascadeRule childT fk policy) = case policy of
+  Cascade  -> void $ execDb ("DELETE FROM " <> childT <> " WHERE " <> fk <> " = $1") [parent]
+  SetNull  -> void $ execDb ("UPDATE " <> childT <> " SET " <> fk <> " = NULL WHERE " <> fk <> " = $1") [parent]
+  Restrict -> pure ()  -- handled in restrictCheck
 
 -- | Run a block inside a database transaction. BEGIN/COMMIT/ROLLBACK are issued
 -- raw (NOT logged) so the statement log shows only data statements. On exception

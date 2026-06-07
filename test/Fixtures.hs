@@ -9,12 +9,15 @@ module Fixtures
   , usersDDL
   , postsDDL
   , profileDDL
+  , tagsDDL
   , UserT(..)
   , User
   , PostT(..)
   , Post
   , ProfileT(..)
   , Profile
+  , TagT(..)
+  , Tag
   ) where
 
 import Control.Exception (SomeException, finally, try)
@@ -28,7 +31,8 @@ import System.Directory (removeDirectoryRecursive)
 import System.Process (callProcess, readProcess)
 import Manifest.Core.Table (Col, PrimaryKey, Serial)
 import Manifest.Core.Meta (genericTableMeta)
-import Manifest.Core.Relation (Card(..), HasRelation(..), belongsTo, hasMany, hasOpt)
+import Manifest.Core.Cascade (OnDelete(..))
+import Manifest.Core.Relation (Card(..), HasRelation(..), belongsTo, cascade, hasMany, hasOpt)
 import Manifest.Entity (Entity (..), genericRowDecoder, genericRowEncode)
 import Manifest.Postgres (Pool, closePool, execText, newPool, withConnection)
 
@@ -49,6 +53,11 @@ instance Entity User where
   rowDecoder = genericRowDecoder
   rowEncode  = genericRowEncode
   primKey    = userId
+  cascadeRules =
+    [ cascade (Proxy @Post)    (Proxy @"postAuthor")  Cascade
+    , cascade (Proxy @Profile) (Proxy @"profileUser") SetNull
+    , cascade (Proxy @Tag)     (Proxy @"tagUser")     Restrict
+    ]
 
 -- Posts: each belongs to a user via post_author = users.user_id (to-many from User).
 data PostT f = Post
@@ -65,10 +74,11 @@ instance Entity Post where
   rowEncode  = genericRowEncode
   primKey    = postId
 
--- Profiles: optional one-per-user via profile_user = users.user_id.
+-- Profiles: optional one-per-user via profile_user = users.user_id. The FK is
+-- nullable (so SetNull can null it; the row then survives, parentless).
 data ProfileT f = Profile
   { profileId   :: Col f (PrimaryKey (Serial Int))
-  , profileUser :: Col f Int
+  , profileUser :: Col f (Maybe Int)
   , profileBio  :: Col f Text
   } deriving Generic
 type Profile = ProfileT Identity
@@ -79,6 +89,21 @@ instance Entity Profile where
   rowDecoder = genericRowDecoder
   rowEncode  = genericRowEncode
   primKey    = profileId
+
+-- Tags: each belongs to a user via tag_user = users.user_id (Restrict on delete).
+data TagT f = Tag
+  { tagId    :: Col f (PrimaryKey (Serial Int))
+  , tagUser  :: Col f Int
+  , tagLabel :: Col f Text
+  } deriving Generic
+type Tag = TagT Identity
+
+instance Entity Tag where
+  type PrimKey Tag = Int
+  tableMeta  = genericTableMeta @TagT "tags"
+  rowDecoder = genericRowDecoder
+  rowEncode  = genericRowEncode
+  primKey    = tagId
 
 instance HasRelation User "posts" where
   type Target      User "posts" = [Post]
@@ -115,8 +140,15 @@ profileDDL :: ByteString
 profileDDL =
   "CREATE TABLE profiles \
   \( profile_id   BIGSERIAL PRIMARY KEY \
-  \, profile_user BIGINT NOT NULL \
+  \, profile_user BIGINT \
   \, profile_bio  TEXT NOT NULL )"
+
+tagsDDL :: ByteString
+tagsDDL =
+  "CREATE TABLE tags \
+  \( tag_id    BIGSERIAL PRIMARY KEY \
+  \, tag_user  BIGINT NOT NULL \
+  \, tag_label TEXT NOT NULL )"
 
 -- | Spin up an ephemeral, isolated Postgres for the action: initdb + pg_ctl on a
 -- private unix socket, create the schema, hand over a 2-connection pool, tear down.
@@ -135,5 +167,5 @@ withTestDb body = do
     _ <- readProcess "initdb" ["-D", dataDir, "-U", "postgres", "-A", "trust", "--no-sync"] ""
     callProcess "pg_ctl" ["start", "-D", dataDir, "-w", "-l", base ++ "/postgres.log", "-o", pgOpts]
     pool <- newPool conninfo 2
-    (do withConnection pool (\c -> mapM_ (\s -> execText c s []) [usersDDL, postsDDL, profileDDL])
+    (do withConnection pool (\c -> mapM_ (\s -> execText c s []) [usersDDL, postsDDL, profileDDL, tagsDDL])
         body pool) `finally` closePool pool

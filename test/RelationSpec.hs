@@ -53,7 +53,7 @@ tests = group "Relation"
         (none, some) <- withSession pool $ do
           u <- add (User { userId = 0, userName = "Ada", userEmail = Nothing } :: User)
           n <- load #profile u
-          _ <- add (Profile { profileId = 0, profileUser = userId u, profileBio = "hi" } :: Profile)
+          _ <- add (Profile { profileId = 0, profileUser = Just (userId u), profileBio = "hi" } :: Profile)
           s <- load #profile u
           pure (fmap profileBio n, fmap profileBio s)
         assertEqual "none" Nothing none
