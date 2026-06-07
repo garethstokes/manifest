@@ -37,12 +37,14 @@ tests = group "SelfRef"
           pure (map employeeName (rel #reports e), any ("employees AS self_t" `isInfixOf`) (stmts l))
         assertEqual "reports" ["R1"] names
         assertBool "self-aliased join" usedJoin
-  , test "load #manager (belongs-to self) returns the report's manager" $
+  , test "load #manager (nullable belongs-to self): Just below, Nothing at top" $
       withTestDb $ \pool -> do
-        nm <- withSession pool $ do
+        (mgrOfReport, mgrOfBoss) <- withSession pool $ do
           boss <- add (Employee { employeeId = 0, employeeManager = Nothing, employeeName = "Boss" } :: Employee)
           r1   <- add (Employee { employeeId = 0, employeeManager = Just (employeeId boss), employeeName = "R1" } :: Employee)
-          m    <- load #manager r1
-          pure (employeeName m)
-        assertEqual "manager" "Boss" nm
+          m1   <- load #manager r1     -- Just Boss
+          m2   <- load #manager boss   -- Nothing (no manager)
+          pure (fmap employeeName m1, fmap employeeName m2)
+        assertEqual "report's manager" (Just "Boss") mgrOfReport
+        assertEqual "boss's manager"   Nothing        mgrOfBoss
   ]

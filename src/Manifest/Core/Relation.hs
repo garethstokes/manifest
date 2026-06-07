@@ -12,6 +12,7 @@ module Manifest.Core.Relation
   , HasRelation(..)
   , RelSpec(..)
   , belongsTo
+  , belongsToMaybe
   , cascade
   , hasMany
   , hasOpt
@@ -43,6 +44,7 @@ data RelSpec t where
   RelMany :: Entity c => ByteString -> RelSpec [c]
   RelOpt  :: Entity c => ByteString -> RelSpec (Maybe c)
   RelOne  :: Entity c => ByteString -> RelSpec c   -- forward FK: target.pk = self.<fk>
+  RelOptOne :: Entity c => ByteString -> RelSpec (Maybe c)   -- forward FK, nullable target
 
 -- | @hasMany #childFk@ — a to-many relationship whose child rows are those
 -- with @child_fk = parent_pk@. The child type comes from the 'Target'.
@@ -58,6 +60,11 @@ hasOpt _ = RelOpt (camelToSnake (symbolVal (Proxy @fk)))
 -- @target.pk = self.<selfFk>@ (a forward foreign key on the owning entity).
 belongsTo :: forall c fk. (Entity c, KnownSymbol fk) => Proxy fk -> RelSpec c
 belongsTo _ = RelOne (camelToSnake (symbolVal (Proxy @fk)))
+
+-- | A nullable to-one via a forward FK: the target (if the self FK is set and
+-- the row exists) is the one with @target.pk = self.<selfFk>@; otherwise 'Nothing'.
+belongsToMaybe :: forall c fk. (Entity c, KnownSymbol fk) => Proxy fk -> RelSpec (Maybe c)
+belongsToMaybe _ = RelOptOne (camelToSnake (symbolVal (Proxy @fk)))
 
 -- | Declare a cascade rule for a reverse-FK relation: the @Child@ rows whose
 -- @selfFk@ column references this entity's PK get @policy@ on delete. Derives

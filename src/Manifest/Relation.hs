@@ -36,6 +36,7 @@ loadRel parent = case relSpec @a @name of
   RelMany childFk -> selectByKey childFk (pkParam parent)
   RelOpt  childFk -> listToMaybe <$> selectByKey childFk (pkParam parent)
   RelOne  selfFk  -> loadOne selfFk parent
+  RelOptOne selfFk -> loadOptOne selfFk parent
 
 -- | The forward-FK (belongs-to) loader: SELECT the target whose PK equals the
 -- parent's value at the self FK column, returning the single row (throwing if
@@ -48,6 +49,16 @@ loadOne selfFk parent = do
   case one of
     (x : _) -> pure x
     []      -> liftIO (throwIO (DbException (OtherError "belongs-to: target row missing")))
+
+-- | The forward-FK, nullable (belongs-to-maybe) loader: a NULL self-FK yields
+-- 'Nothing'; otherwise SELECT the target by its PK and take the first row (if
+-- any). @c@ is the target type, named via the top-level @forall@ so @\@c@ is
+-- nameable (the GADT @c@ can't be named inline).
+loadOptOne :: forall a c. (Entity a, Entity c) => ByteString -> a -> Db (Maybe c)
+loadOptOne selfFk parent =
+  case colValueOf @a selfFk parent of
+    Nothing -> pure Nothing                                   -- self FK is NULL → no manager
+    fkVal   -> listToMaybe <$> selectByKey @c (cmName (pkColumn (tableMeta @c))) fkVal
 
 -- | @SELECT <child cols> FROM <child> WHERE <keyCol> = $1@, decoding each row and
 -- registering it in the identity map (so loaded children are managed and flow

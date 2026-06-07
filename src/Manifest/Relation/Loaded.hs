@@ -101,6 +101,7 @@ joinedLoad parent = case relSpec @a @name of
     case rs of
       (x : _) -> pure x
       []      -> liftIO (throwIO (DbException (OtherError "belongs-to (joined): target row missing")))
+  RelOptOne selfFk -> listToMaybe <$> joinForward selfFk parent
 
 -- | Reverse FK (has-many / has-opt): @SELECT child cols FROM self LEFT JOIN
 -- child ON child.<fk> = self.<pk> WHERE self.<pk> = $1@, decoded NULL-aware.

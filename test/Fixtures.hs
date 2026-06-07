@@ -35,7 +35,7 @@ import System.Process (callProcess, readProcess)
 import Manifest.Core.Table (Col, PrimaryKey, Serial)
 import Manifest.Core.Meta (genericTableMeta)
 import Manifest.Core.Cascade (OnDelete(..))
-import Manifest.Core.Relation (Card(..), HasRelation(..), belongsTo, cascade, hasMany, hasOpt)
+import Manifest.Core.Relation (Card(..), HasRelation(..), belongsTo, belongsToMaybe, cascade, hasMany, hasOpt)
 import Manifest.Entity (Entity (..), genericRowDecoder, genericRowEncode)
 import Manifest.Postgres (Pool, closePool, execText, newPool, withConnection)
 
@@ -125,11 +125,12 @@ instance Entity Employee where
   rowEncode  = genericRowEncode
   primKey    = employeeId
 
--- forward FK (belongs-to self): the manager is the employee whose PK = self.employee_manager
+-- forward FK (nullable belongs-to self): the manager is the employee whose PK =
+-- self.employee_manager, or Nothing when the self-FK is NULL (top of the chain).
 instance HasRelation Employee "manager" where
-  type Target      Employee "manager" = Employee
-  type Cardinality Employee "manager" = 'One
-  relSpec = belongsTo (Proxy @"employeeManager")
+  type Target      Employee "manager" = Maybe Employee
+  type Cardinality Employee "manager" = 'Opt
+  relSpec = belongsToMaybe (Proxy @"employeeManager")
 
 -- reverse FK (has-many self): reports are employees whose employee_manager = self.PK
 instance HasRelation Employee "reports" where
