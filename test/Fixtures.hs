@@ -6,6 +6,7 @@
 
 module Fixtures
   ( withTestDb
+  , withEmptyDb
   , usersDDL
   , postsDDL
   , profileDDL
@@ -221,9 +222,10 @@ commentsDDL =
   \, comment_body TEXT NOT NULL )"
 
 -- | Spin up an ephemeral, isolated Postgres for the action: initdb + pg_ctl on a
--- private unix socket, create the schema, hand over a 2-connection pool, tear down.
-withTestDb :: (Pool -> IO a) -> IO a
-withTestDb body = do
+-- private unix socket, run the given DDL list, hand over a 2-connection pool,
+-- tear down. The shared cluster setup for both 'withTestDb' and 'withEmptyDb'.
+withCluster :: [ByteString] -> (Pool -> IO a) -> IO a
+withCluster ddls body = do
   base <- fmap (takeWhile (/= '\n')) (readProcess "mktemp" ["-d", "/tmp/manifest-pg.XXXXXX"] "")
   let dataDir  = base ++ "/data"
       sock     = base                     -- unix socket dir
@@ -237,5 +239,15 @@ withTestDb body = do
     _ <- readProcess "initdb" ["-D", dataDir, "-U", "postgres", "-A", "trust", "--no-sync"] ""
     callProcess "pg_ctl" ["start", "-D", dataDir, "-w", "-l", base ++ "/postgres.log", "-o", pgOpts]
     pool <- newPool conninfo 2
-    (do withConnection pool (\c -> mapM_ (\s -> execText c s []) [usersDDL, postsDDL, profileDDL, tagsDDL, employeesDDL, commentsDDL])
+    (do withConnection pool (\c -> mapM_ (\s -> execText c s []) ddls)
         body pool) `finally` closePool pool
+
+-- | Spin up an ephemeral, isolated Postgres for the action with the example
+-- schema pre-created, hand over a 2-connection pool, tear down.
+withTestDb :: (Pool -> IO a) -> IO a
+withTestDb = withCluster [usersDDL, postsDDL, profileDDL, tagsDDL, employeesDDL, commentsDDL]
+
+-- | Same ephemeral cluster as 'withTestDb' but creates NO tables — for migration
+-- tests that introspect/diff against an empty schema.
+withEmptyDb :: (Pool -> IO a) -> IO a
+withEmptyDb = withCluster []
