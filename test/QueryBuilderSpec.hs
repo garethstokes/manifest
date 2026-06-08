@@ -78,4 +78,22 @@ tests = group "QueryBuilder"
                                pure (usr, pst))
           pure [ (userName a, postTitle b) | (a, b) <- rows ]
         assertEqual "pairs" [("Ada","P1"),("Ada","P2")] pairs
+  , test "groupBy + countRows counts children per key" $
+      withTestDb $ \pool -> do
+        grouped <- withSession pool $ do
+          u <- add (User { userId = 0, userName = "Ada", userEmail = Nothing } :: User)
+          _ <- add (Post { postId = 0, postAuthor = userId u, postTitle = "P1" } :: Post)
+          _ <- add (Post { postId = 0, postAuthor = userId u, postTitle = "P2" } :: Post)
+          runQuery (do p <- from @Post
+                       groupBy (p ^. #postAuthor)
+                       pure (p ^. #postAuthor, countRows))
+        assertEqual "posts per author" [(1 :: Int, 2 :: Int)] grouped
+  , test "sum_ aggregates a column" $
+      withTestDb $ \pool -> do
+        total <- withSession pool $ do
+          u <- add (User { userId = 0, userName = "Ada", userEmail = Nothing } :: User)
+          _ <- add (Post { postId = 0, postAuthor = userId u, postTitle = "P1" } :: Post)
+          _ <- add (Post { postId = 0, postAuthor = userId u, postTitle = "P2" } :: Post)
+          runQuery (do p <- from @Post; pure (sum_ (p ^. #postAuthor)))
+        assertEqual "sum of author ids" [Just (2 :: Int)] total
   ]

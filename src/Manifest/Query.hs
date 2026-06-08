@@ -18,6 +18,7 @@ module Manifest.Query
   , (.==), (./=), (.>), (.<), (.&&)
   , where_
   , orderBy, asc, desc, limit, offset, OrderTerm
+  , groupBy, countRows, sum_, avg_, min_, max_
   , Selectable (Result)
   , renderQueryM
   , runQuery
@@ -28,7 +29,7 @@ import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.State.Strict (State, get, modify', put, runState)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BC
-import Manifest.Core.Codec (RowDecoder, SqlParam, ToField (..), decodeRow)
+import Manifest.Core.Codec (FromField, RowDecoder, SqlParam, ToField (..), decodeRow, field)
 import Manifest.Core.Meta (ColumnMeta (..), TableMeta (..))
 import Manifest.Core.Query (Column (..))
 import Manifest.Core.Sql (bcIntercalate)
@@ -124,6 +125,21 @@ limit n = QueryM $ modify' $ \st -> st { qsLimit = Just n }
 offset :: Int -> QueryM ()
 offset n = QueryM $ modify' $ \st -> st { qsOffset = Just n }
 
+groupBy :: Expr t -> QueryM ()
+groupBy (Expr t _) = QueryM $ modify' $ \st -> st { qsGroup = qsGroup st ++ [t] }
+
+countRows :: Expr Int
+countRows = Expr "COUNT(*)" []
+
+aggFn :: ByteString -> Expr t -> Expr (Maybe t)
+aggFn fn (Expr t p) = Expr (fn <> "(" <> t <> ")") p
+
+sum_, avg_, min_, max_ :: Expr t -> Expr (Maybe t)
+sum_ = aggFn "SUM"
+avg_ = aggFn "AVG"
+min_ = aggFn "MIN"
+max_ = aggFn "MAX"
+
 class Selectable s where
   type Result s
   selCols :: s -> ByteString
@@ -134,6 +150,11 @@ instance Entity e => Selectable (Handle e) where
   selCols (Handle al) =
     bcIntercalate ", " [ al <> "." <> cmName c | c <- tmColumns (tableMeta @e) ]
   selDec _ = rowDecoder @e
+
+instance FromField t => Selectable (Expr t) where
+  type Result (Expr t) = t
+  selCols (Expr t _) = t
+  selDec  _ = field
 
 instance (Selectable a, Selectable b) => Selectable (a, b) where
   type Result (a, b) = (Result a, Result b)
