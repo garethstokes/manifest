@@ -42,8 +42,9 @@ One record declaration serves three jobs. A higher-kinded record `UserT f`
 collapses, in `Identity` context, to the clean runtime value `type User =
 UserT Identity`; in query context the same fields become typed column references
 (`#userName`). `deriving Generic` plus an `Entity` instance derives the table
-metadata, the row codec, and the generic CRUD the session drives — no Template
-Haskell, no per-table codegen.
+metadata, the row codec, and the generic CRUD the session drives. You write that
+record and instance by hand, or generate them from one block with the `mkEntity`
+Template Haskell macro — the runtime is identical either way.
 
 On top of that Core sits the session: an identity map, the four entity states
 (transient → pending → persistent → deleted), snapshot-diff change tracking, an
@@ -74,16 +75,20 @@ code on the page is the code that runs. Start with
 
 ## Status
 
-Manifest is real and tested for the Unit of Work, relationships, cascades, and
-migrations (the parts the reference pages document). Two surfaces named in the
-design are **Planned**, not built — do not assume they work yet:
+Manifest is real and tested for the Unit of Work, relationships, cascades,
+migrations, and the Template Haskell entity front-end (the parts the reference
+pages document). One surface named in the design is **Planned**, not built — do
+not assume it works yet:
 
 - **Joins and aggregates in the query Core** — the standalone query AST does not
   yet expose joins/aggregates (relationship loading *does* use a `LEFT JOIN`
   internally; that is a separate, working path).
-- **The Template Haskell front-end** — the terse `@derive`-style macro is
-  deferred. Today you hand-write the `UserT f` record + `deriving Generic` + the
-  `Entity` instance, which is the honest, transparent foundation.
+
+The **`mkEntity` Template Haskell macro** generates the `UserT f` record +
+`deriving Generic` + the `Entity` instance from one terse block
+([Entities](entities.md)); it builds the core entity, while relationships and
+cascades are still declared by hand. Hand-writing the record + instance remains
+fully supported and is what the snippets above show.
 
 The site is published by **GitHub Pages' built-in Jekyll build** of `docs/` —
 there is no Actions workflow. The tutorials run as tests and require a Postgres

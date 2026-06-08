@@ -15,8 +15,9 @@ snippet below matches the real API — the same surface the
 A Manifest table is one higher-kinded record. That single declaration gives you
 the clean runtime value, the typed column references the query layer uses, and —
 via `deriving Generic` and an `Entity` instance — the table metadata, the row
-codec, and the generic CRUD the session drives. No Template Haskell, no per-table
-boilerplate beyond the record and the instance.
+codec, and the generic CRUD the session drives. You write that record and
+instance by hand (shown below), or generate them from one block with the
+`mkEntity` macro ([Entities](entities.md)).
 
 ## What
 
@@ -61,6 +62,10 @@ derives the table name, columns, types, PK and serial flags; `genericRowDecoder`
 / `genericRowEncode` derive the row codec; and the field labels become typed
 column references (`#userName`). The session's `get` / `add` / `save` / `delete`
 are generic over the `Entity` class — defining the instance is all it takes.
+
+> **Prefer less boilerplate?** The [`mkEntity` Template Haskell macro](entities.md)
+> generates this exact record + `type` synonym + `Entity` instance from one terse
+> block. The hand-written form above is what it expands to.
 
 ### 2. Open a session
 
