@@ -12,7 +12,9 @@ module Manifest.Query
   , Handle
   , Expr
   , from
+  , withCte, fromCte, CteRef
   , innerJoin
+  , leftJoin, OptHandle, Projectable
   , (^.)
   , val
   , (.==), (./=), (.>), (.<), (.&&)
@@ -29,12 +31,12 @@ import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.State.Strict (State, get, modify', put, runState)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BC
-import Manifest.Core.Codec (FromField, RowDecoder, SqlParam, ToField (..), decodeRow, field)
+import Manifest.Core.Codec (FromField, RowDecoder (..), SqlParam, ToField (..), decodeRow, field)
 import Manifest.Core.Meta (ColumnMeta (..), TableMeta (..))
 import Manifest.Core.Query (Column (..))
 import Manifest.Core.Sql (bcIntercalate)
-import Manifest.Entity (Entity (..))
-import Manifest.Error (DbError (..), DbException (..))
+import Manifest.Entity (Entity (..), pkIndex)
+import Manifest.Error (DecodeError (..), DbError (..), DbException (..))
 import Manifest.Session (Db, execDb)
 
 newtype QueryM a = QueryM (State QueryState a)
@@ -50,20 +52,34 @@ data QueryState = QueryState
   , qsGroup  :: [ByteString]
   , qsLimit  :: Maybe Int
   , qsOffset :: Maybe Int
+  , qsWith   :: [ByteString]     -- rendered "cteN AS (subsql)" fragments
+  , qsWithP  :: [SqlParam]       -- subquery params, in order (render before SELECT)
+  , qsCte    :: Int              -- next CTE index
   }
 
 emptyState :: QueryState
-emptyState = QueryState 0 "" [] [] [] [] [] Nothing Nothing
+emptyState = QueryState 0 "" [] [] [] [] [] Nothing Nothing [] [] 0
 
 newtype Handle e = Handle ByteString
 data    Expr t   = Expr ByteString [SqlParam]
 
--- | Project a column from a handle. The handle's entity @e@ unifies with the
--- (otherwise table-polymorphic) label column @Column e t@, binding the label to
--- the entity; the result is qualified by the handle's alias.
-(^.) :: Handle e -> Column e t -> Expr t
-Handle al ^. Column c = Expr (al <> "." <> c) []
+-- | A handle to the right side of a LEFT JOIN: its columns may be NULL, so it
+-- selects as @Maybe e@.
+newtype OptHandle e = OptHandle ByteString
+
+-- | Things you can project a column from (a 'Handle', or a left-joined 'OptHandle').
+-- The handle's entity @e@ unifies with the (otherwise table-polymorphic) label
+-- column @Column e t@, binding the label to the entity; the result is qualified
+-- by the handle's alias.
+class Projectable h where
+  (^.) :: h e -> Column e t -> Expr t
 infixl 8 ^.
+
+instance Projectable Handle where
+  Handle al ^. Column c = Expr (al <> "." <> c) []
+
+instance Projectable OptHandle where
+  OptHandle al ^. Column c = Expr (al <> "." <> c) []
 
 val :: ToField t => t -> Expr t
 val x = Expr "?" [toField x]
@@ -90,6 +106,33 @@ from = QueryM $ do
   put st { qsAlias = i + 1, qsFrom = tmTable (tableMeta @e) <> " AS " <> al }
   pure (Handle al)
 
+-- | A reference to a registered CTE producing rows of entity @e@.
+newtype CteRef e = CteRef ByteString
+
+-- | Register a subquery (which selects a whole entity) as a non-recursive CTE,
+-- returning a reference. Use 'fromCte' to read from it.
+withCte :: forall e. Entity e => QueryM (Handle e) -> QueryM (CteRef e)
+withCte sub = QueryM $ do
+  st <- get
+  let i              = qsCte st
+      name           = "cte" <> BC.pack (show i)
+      (subRaw, subP) = renderRaw sub
+  put st { qsCte   = i + 1
+         , qsWith  = qsWith st ++ [name <> " AS (" <> subRaw <> ")"]
+         , qsWithP = qsWithP st ++ subP
+         }
+  pure (CteRef name)
+
+-- | Read from a CTE as if it were a table. The CTE's columns are @e@'s columns
+-- (the subquery selected a whole entity), so the returned 'Handle' projects them.
+fromCte :: forall e. CteRef e -> QueryM (Handle e)
+fromCte (CteRef name) = QueryM $ do
+  st <- get
+  let i  = qsAlias st
+      al = "t" <> BC.pack (show i)
+  put st { qsAlias = i + 1, qsFrom = name <> " AS " <> al }
+  pure (Handle al)
+
 -- | INNER JOIN table @e@. The function receives the new handle and returns the
 -- ON condition; handles bound earlier in the do-block are captured by the closure.
 innerJoin :: forall e. Entity e => (Handle e -> Expr Bool) -> QueryM (Handle e)
@@ -105,6 +148,21 @@ innerJoin onf = QueryM $ do
          , qsFromP  = qsFromP st ++ onPs
          }
   pure h
+
+-- | LEFT JOIN table @e@. Like 'innerJoin', but selects as @Maybe e@: rows with no
+-- match decode to 'Nothing'. The ON closure gets a plain 'Handle e'.
+leftJoin :: forall e. Entity e => (Handle e -> Expr Bool) -> QueryM (OptHandle e)
+leftJoin onf = QueryM $ do
+  st <- get
+  let i  = qsAlias st
+      al = "t" <> BC.pack (show i)
+      Expr onTxt onPs = onf (Handle al)
+  put st { qsAlias  = i + 1
+         , qsFrom   = qsFrom st <> " LEFT JOIN " <> tmTable (tableMeta @e)
+                        <> " AS " <> al <> " ON " <> onTxt
+         , qsFromP  = qsFromP st ++ onPs
+         }
+  pure (OptHandle al)
 
 where_ :: Expr Bool -> QueryM ()
 where_ (Expr t ps) = QueryM $ modify' $ \st ->
@@ -156,6 +214,26 @@ instance Entity e => Selectable (Handle e) where
     bcIntercalate ", " [ al <> "." <> cmName c | c <- tmColumns (tableMeta @e) ]
   selDec _ = rowDecoder @e
 
+-- | Decode @e@'s columns, but yield 'Nothing' when the LEFT JOIN had no match
+-- (its primary-key column is NULL). Consumes @e@'s columns either way.
+optDecoder :: forall e. Entity e => RowDecoder (Maybe e)
+optDecoder = RowDecoder $ \cols ->
+  let n             = length (tmColumns (tableMeta @e))
+      (these, rest) = splitAt n cols
+  in if length these < n
+       then Left (DecodeError "optDecoder: ran out of columns")
+       else if these !! pkIndex @e == Nothing
+              then Right (Nothing, rest)
+              else case decodeRow (rowDecoder @e) these of
+                     Right v  -> Right (Just v, rest)
+                     Left err -> Left err
+
+instance Entity e => Selectable (OptHandle e) where
+  type Result (OptHandle e) = Maybe e
+  selCols (OptHandle al) =
+    bcIntercalate ", " [ al <> "." <> cmName c | c <- tmColumns (tableMeta @e) ]
+  selDec _ = optDecoder @e
+
 instance FromField t => Selectable (Expr t) where
   type Result (Expr t) = t
   selCols (Expr t _) = t
@@ -179,17 +257,24 @@ numberPlaceholders = go (1 :: Int)
         Nothing        -> pre
         Just (_, more) -> pre <> "$" <> BC.pack (show n) <> go (n + 1) more
 
-renderQueryM :: Selectable s => QueryM s -> (ByteString, [SqlParam])
-renderQueryM qm =
+-- | Assemble SQL with '?' placeholders (un-numbered) and params in textual order.
+renderRaw :: Selectable s => QueryM s -> (ByteString, [SqlParam])
+renderRaw qm =
   let (sel, st) = runQueryM qm
+      withTxt  = if null (qsWith st) then ""
+                 else "WITH " <> bcIntercalate ", " (qsWith st) <> " "
       whereTxt = if null (qsWhere st) then "" else " WHERE " <> bcIntercalate " AND " (qsWhere st)
       groupTxt = if null (qsGroup st) then "" else " GROUP BY " <> bcIntercalate ", " (qsGroup st)
       orderTxt = if null (qsOrder st) then "" else " ORDER BY " <> bcIntercalate ", " (qsOrder st)
-      limTxt = maybe "" (\n -> " LIMIT "  <> BC.pack (show n)) (qsLimit st)
-      offTxt = maybe "" (\n -> " OFFSET " <> BC.pack (show n)) (qsOffset st)
-      raw = "SELECT " <> selCols sel <> " FROM " <> qsFrom st
+      limTxt   = maybe "" (\n -> " LIMIT "  <> BC.pack (show n)) (qsLimit st)
+      offTxt   = maybe "" (\n -> " OFFSET " <> BC.pack (show n)) (qsOffset st)
+      raw = withTxt <> "SELECT " <> selCols sel <> " FROM " <> qsFrom st
               <> whereTxt <> groupTxt <> orderTxt <> limTxt <> offTxt
-  in (numberPlaceholders raw, selParams sel ++ qsFromP st ++ qsWhereP st)
+      params = qsWithP st ++ selParams sel ++ qsFromP st ++ qsWhereP st
+  in (raw, params)
+
+renderQueryM :: Selectable s => QueryM s -> (ByteString, [SqlParam])
+renderQueryM qm = let (raw, ps) = renderRaw qm in (numberPlaceholders raw, ps)
 
 decodeRowAs :: RowDecoder x -> [SqlParam] -> Db x
 decodeRowAs dec row =

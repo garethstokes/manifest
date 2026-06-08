@@ -36,9 +36,15 @@ module Manifest
     -- * Query builder (table-handle)
   , QueryM
   , Handle
+  , OptHandle
+  , Projectable
   , Expr
   , from
+  , withCte
+  , fromCte
+  , CteRef
   , innerJoin
+  , leftJoin
   , (^.)
   , val
   , (.==), (./=), (.>), (.<), (.&&)
@@ -120,7 +126,8 @@ import Manifest.Core.Query
   , (=.)
   )
 import Manifest.Query
-  ( QueryM, Handle, Expr, from, innerJoin, (^.), val
+  ( QueryM, Handle, OptHandle, Projectable, Expr, from
+  , withCte, fromCte, CteRef, innerJoin, leftJoin, (^.), val
   , (.==), (./=), (.>), (.<), (.&&), where_, orderBy, asc, desc
   , limit, offset, groupBy, countRows, sum_, avg_, min_, max_
   , OrderTerm, Selectable (Result), runQuery )

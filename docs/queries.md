@@ -28,7 +28,7 @@ error. Expression comparisons are `.==`, `./=`, `.>`, `.<`, combined with `.&&`;
 `val` lifts a literal. `runQuery` results are plain values, not identity-map entries;
 use `get` or `selectWhere` for managed rows.
 
-## Inner joins
+## Joins
 
 `innerJoin @Post` takes a function from the new handle to the join condition;
 handles from earlier in the block are in scope:
@@ -38,6 +38,16 @@ pairs <- runQuery $ do
   u <- from @User
   p <- innerJoin @Post (\p -> u ^. #userId .== p ^. #postAuthor)
   pure (u, p)                  -- :: Db [(User, Post)]
+```
+
+A `leftJoin` keeps rows from the left table even when the right side has no match;
+the right side selects as `Maybe`:
+
+```haskell
+rows <- runQuery $ do
+  u  <- from @User
+  mp <- leftJoin @Post (\p -> p ^. #postAuthor .== u ^. #userId)
+  pure (u, mp)                 -- :: Db [(User, Maybe Post)]
 ```
 
 ## Aggregates and grouping
@@ -56,16 +66,35 @@ total <- runQuery $ do
   pure (sum_ (p ^. #postAuthor))       -- :: Db [Maybe Int]
 ```
 
+## Common table expressions
+
+`withCte` registers a subquery (which selects a whole entity) as a `WITH` clause and
+returns a reference; `fromCte` reads from it like a table:
+
+```haskell
+names <- runQuery $ do
+  active <- withCte (do u <- from @User
+                        where_ (u ^. #userName .> val "A")
+                        pure u)
+  h <- fromCte active
+  orderBy [asc (h ^. #userName)]
+  pure h                       -- :: Db [User]
+```
+
 ## Status
 
 Built and tested: `from`, `where_`, `orderBy`/`asc`/`desc`, `limit`/`offset`,
-`innerJoin`, `groupBy`, `countRows`/`sum_`/`avg_`/`min_`/`max_`, tuple selections,
+`innerJoin`, `leftJoin`, `withCte`/`fromCte`, `groupBy`,
+`countRows`/`sum_`/`avg_`/`min_`/`max_`, tuple selections,
 and `runQuery`. Columns are entity- and alias-bound through handles.
 
 Planned, not built:
 
-* **Outer joins, `HAVING`, `DISTINCT`, subqueries, and CTEs.** Only `INNER JOIN`
-  and the aggregates above are built.
+* **`RIGHT` / `FULL` joins, `HAVING`, `DISTINCT`, recursive CTEs, and non-CTE
+  subqueries.** `INNER` and `LEFT` joins, the aggregates above, and non-recursive
+  entity CTEs are built.
+* **CTEs over non-entity selections.** A CTE's subquery selects a whole entity; a CTE
+  whose selection is a tuple or expression is not supported.
 * **Multiple `from` / cross joins**, and selection tuples wider than pairs beyond
   left-nesting.
 * **Session-managed results.** Builder results are plain decoded values; `get` and
