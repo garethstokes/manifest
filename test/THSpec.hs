@@ -15,6 +15,7 @@ import Manifest.Core.Table (PrimaryKey, Serial)
 import Manifest.Postgres (execText, withConnection)
 import Manifest.Derive.TH (field, mkEntity)
 import System.Directory (getTemporaryDirectory, removeFile)
+import System.Exit (ExitCode (..))
 import System.IO (hClose, openTempFile)
 import System.Process (readProcessWithExitCode)
 import Fixtures (withEmptyDb)
@@ -81,7 +82,7 @@ tests = group "TH"
       (path, h) <- openTempFile tmp "NoPkGolden.hs"
       hClose h
       writeFile path noPkSource
-      (_code, _out, err) <-
+      (code, _out, err) <-
         readProcessWithExitCode "ghc"
           -- @-fexternal-interpreter@ is required: this GHC is built dynamic, so
           -- the in-process splice interpreter would try to dlopen a @manifest@
@@ -99,6 +100,8 @@ tests = group "TH"
           ""
       removeFile path
       let msg = unwords (words err)
+      assertBool ("compilation must fail; exit was: " <> show code)
+        (code /= ExitSuccess)
       assertBool ("names the missing PrimaryKey; output was:\n" <> err)
         ("has no PrimaryKey field" `isInfixOf` msg)
   ]
