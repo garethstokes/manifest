@@ -16,6 +16,7 @@ module Manifest.Query
   , val
   , (.==), (./=), (.>), (.<), (.&&)
   , where_
+  , orderBy, asc, desc, limit, offset, OrderTerm
   , Selectable (Result)
   , renderQueryM
   , runQuery
@@ -90,6 +91,21 @@ from = QueryM $ do
 where_ :: Expr Bool -> QueryM ()
 where_ (Expr t ps) = QueryM $ modify' $ \st ->
   st { qsWhere = qsWhere st ++ [t], qsWhereP = qsWhereP st ++ ps }
+
+newtype OrderTerm = OrderTerm ByteString
+
+asc, desc :: Expr t -> OrderTerm
+asc  (Expr t _) = OrderTerm (t <> " ASC")
+desc (Expr t _) = OrderTerm (t <> " DESC")
+
+orderBy :: [OrderTerm] -> QueryM ()
+orderBy ts = QueryM $ modify' $ \st -> st { qsOrder = qsOrder st ++ [ x | OrderTerm x <- ts ] }
+
+limit :: Int -> QueryM ()
+limit n = QueryM $ modify' $ \st -> st { qsLimit = Just n }
+
+offset :: Int -> QueryM ()
+offset n = QueryM $ modify' $ \st -> st { qsOffset = Just n }
 
 class Selectable s where
   type Result s

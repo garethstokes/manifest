@@ -41,4 +41,23 @@ tests = group "QueryBuilder"
                              pure u)
           pure (map userName us)
         assertEqual "names" ["Bob"] names
+  , test "orderBy + limit + offset render in order" $
+      assertEqual "sql"
+        "SELECT t0.user_id, t0.user_name, t0.user_email FROM users AS t0 ORDER BY t0.user_name DESC LIMIT 2 OFFSET 1"
+        (fst (renderQueryM (do u <- from @User
+                               orderBy [desc (u ^. #userName)]
+                               limit 2
+                               offset 1
+                               pure u)))
+  , test "orderBy + limit return rows in order, paginated" $
+      withTestDb $ \pool -> do
+        names <- withSession pool $ do
+          mapM_ (\n -> add (User { userId = 0, userName = n, userEmail = Nothing } :: User))
+                ["Ada","Bob","Cay","Dee"]
+          us <- runQuery (do u <- from @User
+                             orderBy [asc (u ^. #userName)]
+                             limit 2
+                             pure u)
+          pure (map userName us)
+        assertEqual "first two by name" ["Ada","Bob"] names
   ]
