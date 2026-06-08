@@ -4,23 +4,23 @@ parent: Tutorials
 nav_order: 1
 ---
 
-# Unit of Work — edit a plain value, get a minimal UPDATE
+# Unit of Work: edit a plain value, get a minimal UPDATE
 
 > Runnable: this page is `docs/tutorials/Tutorial/UnitOfWork.lhs`, compiled and
 > run by `zinc test` against a real Postgres. The Haskell you read below is the
-> Haskell that runs — if it stopped being true, this page would stop compiling.
+> Haskell that runs; if it stopped being true, this page would stop compiling.
 
-## Why
+## What this shows
 
-In a Unit-of-Work session you work with **plain records**. You load (or create)
-a value, you edit a field with ordinary record-update syntax, and at flush time
-Manifest works out the *minimal* SQL needed to make the database match. You never
-hand-write an `UPDATE`; you never tell it which columns changed. It diffs the
+In a Unit-of-Work session you work with plain records. You load (or create) a
+value, you edit a field with ordinary record-update syntax, and at flush time the
+session works out the minimal SQL needed to make the database match. You do not
+hand-write an `UPDATE`, and you do not tell it which columns changed. It diffs the
 record you saved against the snapshot it took when the value entered the session,
-and emits an `UPDATE` touching **only** the columns that actually differ.
+and emits an `UPDATE` touching only the columns that differ.
 
-This is the same idea SQLAlchemy's Unit of Work gives Python, sitting on top of a
-thin higher-kinded-data core (design §4.6).
+Identity is the primary key, a field on the record; you hand the edited value back
+and the session computes the difference (design §4.6).
 
 ## What
 
@@ -51,8 +51,8 @@ import Harness
 
 We open a session over the test pool, `add` a fresh `User` (an eager `INSERT`
 that returns the row with its assigned primary key), then inside a transaction
-`save` the same value with **one** field changed — `userName` from `"Ada"` to
-`"Bob"`. Autoflush turns that into SQL as the transaction commits; we capture the
+`save` the same value with one field changed: `userName` from `"Ada"` to `"Bob"`.
+Autoflush turns that into SQL as the transaction commits; we capture the
 session's `statementLog` and pick out the `UPDATE` it produced.
 
 Because `userEmail` and `userId` are unchanged, the diff names a single column:
@@ -78,15 +78,15 @@ The assertion is exact: the only `UPDATE` issued is
 UPDATE users SET user_name = $1 WHERE user_id = $2
 ```
 
-— `user_name` only, keyed by primary key. Had we changed two fields, two columns
-would appear in the `SET`; had we changed none, no `UPDATE` would be emitted at
-all.
+that is, `user_name` only, keyed by primary key. Had we changed two fields, two
+columns would appear in the `SET`; had we changed none, no `UPDATE` would be emitted
+at all.
 
 ## Examples
 
-The same snapshot-diff applies however you obtain the value. A sketch (this block
-is illustrative-only — it renders but is **not** compiled, so it can elide the
-session plumbing):
+The same snapshot-diff applies however you obtain the value. A sketch (this block is
+illustrative only; it renders but is not compiled, so it can elide the session
+plumbing):
 
 ```hs
 u <- get @User (Key 1)          -- becomes managed, snapshot taken here
@@ -97,5 +97,5 @@ case u of
 ```
 
 Change the email instead of the name and the minimal `UPDATE` shifts to
-`user_email`; the mechanism is identical. The lesson: you edit values, Manifest
-writes the minimal SQL.
+`user_email`; the mechanism is identical. You edit values, and the session writes
+the minimal SQL.

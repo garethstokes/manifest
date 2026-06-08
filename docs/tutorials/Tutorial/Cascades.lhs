@@ -4,32 +4,30 @@ parent: Tutorials
 nav_order: 3
 ---
 
-# Cascades — delete a parent, its children go too
+# Cascades: delete a parent, its children go too
 
 > Runnable: this page is `docs/tutorials/Tutorial/Cascades.lhs`, compiled and run
 > by `zinc test` against a real Postgres. The Haskell you read below is the
-> Haskell that runs — if it stopped being true, this page would stop compiling.
+> Haskell that runs; if it stopped being true, this page would stop compiling.
 
-## Why
+## What this shows
 
-A `User` *has many* `Post`s. Delete the user and the orphaned posts have to go
-somewhere — left behind they are dangling rows pointing at a row that no longer
-exists. Manifest lets you declare that policy once, on the parent entity, and
-then honours it for you: when the Unit-of-Work session flushes the parent's
-`delete`, it first deletes the children. You never write the child `DELETE` by
-hand, and you can't forget it.
+A `User` has many `Post`s. When you delete the user, its posts need an on-delete
+policy. Manifest lets you declare that policy once, on the parent entity, and
+applies it when the Unit-of-Work session flushes the parent's `delete`. You do not
+write the child `DELETE` by hand.
 
-This is **built** (SP2.6). The policy lives in the parent `Entity`'s
-`cascadeRules`, and is applied at flush time — not by the database, but by
-Manifest, so the same rule works regardless of whether the Postgres schema has a
-matching `ON DELETE` foreign key.
+This is **built** (SP2.6). The policy lives in the parent `Entity`'s `cascadeRules`
+and is applied at flush time, in the session rather than by the database, so the
+same rule works whether or not the Postgres schema has a matching `ON DELETE`
+foreign key.
 
 ## What
 
 Each rule names a child entity, the foreign-key label on that child that points
 back at this parent, and an `OnDelete` policy. In the fixtures used by this
-suite, `User` declares (illustrative — this is the declaration shape, not
-compiled here):
+suite, `User` declares (illustrative; this is the declaration shape, not compiled
+here):
 
 ```hs
 instance Entity User where
@@ -43,14 +41,14 @@ instance Entity User where
 
 The three `OnDelete` policies:
 
-* **`Cascade`** — delete the children too. (This page demonstrates it.)
-* **`SetNull`** — keep the children but null their foreign key (the FK column
-  must be nullable); the rows survive, parentless.
-* **`Restrict`** — refuse the delete if any children exist; the whole flush is
-  aborted before anything mutates.
+* **`Cascade`**: delete the children too. (This page demonstrates it.)
+* **`SetNull`**: keep the children but null their foreign key (the FK column must be
+  nullable); the rows survive, parentless.
+* **`Restrict`**: refuse the delete if any children exist; the whole flush is aborted
+  before anything mutates.
 
-This tutorial demonstrates the `Cascade` rule — `cascade (Proxy @Post)
-(Proxy @"postAuthor") Cascade` — end to end through the public API.
+This tutorial demonstrates the `Cascade` rule, `cascade (Proxy @Post) (Proxy
+@"postAuthor") Cascade`, end to end through the public API.
 
 ## How
 
@@ -78,7 +76,7 @@ We `add` a user and a couple of posts authored by them, then `delete` the user
 inside a transaction. `User`'s `cascadeRules` carry
 `cascade (Proxy @Post) (Proxy @"postAuthor") Cascade`, so when the session
 flushes the parent delete it first deletes the children. We then count the posts
-with `selectWhere` — there should be none left.
+with `selectWhere`; there should be none left.
 
 ```haskell
 tests :: [Test]
@@ -98,11 +96,10 @@ tests = group "Tutorial.Cascades"
 ## Examples
 
 The other two policies follow the same declaration shape; only the `OnDelete`
-constructor changes. Illustrative-only (this block renders but is **not**
-compiled):
+constructor changes. Illustrative only (this block renders but is not compiled):
 
 ```hs
--- SetNull: keep the child, null its (nullable) FK — the row survives, parentless.
+-- SetNull: keep the child, null its (nullable) FK; the row survives, parentless.
 cascade (Proxy @Profile) (Proxy @"profileUser") SetNull
 
 -- Restrict: refuse the parent delete while any child exists; the flush aborts
@@ -110,7 +107,6 @@ cascade (Proxy @Profile) (Proxy @"profileUser") SetNull
 cascade (Proxy @Tag) (Proxy @"tagUser") Restrict
 ```
 
-The lesson: declare the on-delete policy once, on the parent entity's
-`cascadeRules`, and the session enforces it at flush — `Cascade` removes the
-children, `SetNull` orphans them, `Restrict` blocks the delete. No hand-written
-child `DELETE`s, and no way to forget one.
+Declare the on-delete policy once, on the parent entity's `cascadeRules`, and the
+session enforces it at flush: `Cascade` removes the children, `SetNull` orphans
+them, `Restrict` blocks the delete. You do not write the child `DELETE`s by hand.

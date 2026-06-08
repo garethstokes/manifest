@@ -5,91 +5,77 @@ nav_order: 1
 
 # manifest
 
-The Unit-of-Work layer Haskell never had.
-
-The Haskell ecosystem has excellent *Core* layers — beam, rel8, esqueleto,
-opaleye give you type-safe, composable SQL — but no real *ORM* layer. Nobody had
-ported SQLAlchemy's **Unit of Work**: a session with an identity map, change
-tracking that emits minimal `UPDATE`s, relationship-loading strategies, and
-cascades. That gap exists because the obvious implementation relies on mutating
-objects in place, which is unidiomatic — even impossible — in Haskell.
-
-Manifest closes it. It is a SQLAlchemy-style Unit of Work sitting on a thin,
-owned, Higher-Kinded-Data Core, with a derive layer that turns plain record
-declarations into schema, CRUD, relationships, and migrations.
+Manifest is a Unit-of-Work ORM for Haskell, built on a small Higher-Kinded-Data
+Core. It provides an identity map, change tracking that emits minimal `UPDATE`s,
+relationship-loading strategies, onDelete cascades, and schema migrations derived
+from your record declarations.
 
 ```haskell
 withSession pool $ do
   u <- add (User { userId = 0, userName = "Ada", userEmail = Just "ada@x.io" } :: User)
   withTransaction $ save (u { userName = "Bob" } :: User)
-  --                                        ^ edit a plain value;
-  --   flush computes the minimal write: UPDATE users SET user_name = $1 WHERE user_id = $2
+  -- flush computes the minimal write:
+  -- UPDATE users SET user_name = $1 WHERE user_id = $2
 ```
 
-## Why
+## Concepts
 
-In SQLAlchemy you edit an object and the session works out the SQL. In Haskell a
-value has no hidden state, so the trick everyone reached for — observe a mutation
-in place — does not exist. Manifest takes the honest path: identity is the
-**primary key** (a field on the record), and you hand the edited value back with
-`save`. The session diffs it against the snapshot it took when the value entered
-the session and emits an `UPDATE` touching only the columns that actually
-changed. You never hand-write SQL; you never tell it which columns are dirty.
+Identity is the primary key, a field on the record. You read a value, edit it as
+an ordinary Haskell value, and hand it back with `save`. The session diffs it
+against the snapshot it took when the value entered the session and emits an
+`UPDATE` touching only the columns that changed. You do not write SQL, and you do
+not mark columns dirty.
 
-## What
+One record declaration serves three roles. A higher-kinded record `UserT f`
+becomes, in `Identity` context, the runtime value `type User = UserT Identity`;
+in query context the same fields become typed column references (`#userName`).
+`deriving Generic` and an `Entity` instance provide the table metadata, the row
+codec, and the generic CRUD the session drives. You can write the record and
+instance by hand or generate them with the `mkEntity` Template Haskell macro.
 
-One record declaration serves three jobs. A higher-kinded record `UserT f`
-collapses, in `Identity` context, to the clean runtime value `type User =
-UserT Identity`; in query context the same fields become typed column references
-(`#userName`). `deriving Generic` plus an `Entity` instance derives the table
-metadata, the row codec, and the generic CRUD the session drives. You write that
-record and instance by hand, or generate them from one block with the `mkEntity`
-Template Haskell macro — the runtime is identical either way.
-
-On top of that Core sits the session: an identity map, the four entity states
-(transient → pending → persistent → deleted), snapshot-diff change tracking, an
-insert→update→delete flush, relationship loading (two paths, `selectin` vs
+On top of the Core sits the session: an identity map, the four entity states
+(transient, pending, persistent, deleted), snapshot-diff change tracking, an
+insert/update/delete flush, relationship loading (two strategies, `selectin` and
 `joined`), and onDelete cascades applied at flush.
 
-## How
+## Pages
 
-- **[Getting started](getting-started.md)** — define a table, open a session,
-  do a first round-trip (`add` / `get` / `save`).
-- **[Entities](entities.md)** — HKD records, `Col`/`Identity` erasure,
-  `deriving Generic` + the `Entity` instance, keys, and `#label` column refs.
-- **[Unit of Work](unit-of-work.md)** — the `Db` monad, the identity map, the
-  four states, snapshot-diff, and the flush algorithm.
-- **[Relationships](relationships.md)** — the A-path (`load`) and D-path
-  (`Ent` / `with` / `rel`), `selectin` vs `joined`, and one-level nesting.
-- **[Cascades](cascades.md)** and **[Migrations](migrations.md)** — onDelete
-  policies, and records as the schema source of truth.
-- **[Tutorials](tutorials/index.md)** — literate Haskell pages that are also
-  runnable tests in the suite.
+- [Getting started](getting-started.md): define a table, open a session, do a
+  first round-trip (`add` / `get` / `save`).
+- [Entities](entities.md): HKD records, `Col`/`Identity` erasure, `deriving
+  Generic` and the `Entity` instance, keys, `#label` column references, and the
+  `mkEntity` macro.
+- [Unit of Work](unit-of-work.md): the `Db` monad, the identity map, the four
+  states, snapshot-diff, and the flush algorithm.
+- [Relationships](relationships.md): the A-path (`load`) and D-path (`Ent` /
+  `with` / `rel`), `selectin` vs `joined`, and one-level nesting.
+- [Cascades](cascades.md) and [Migrations](migrations.md): onDelete policies, and
+  records as the schema source of truth.
+- [Tutorials](tutorials/index.md): literate Haskell pages that are also runnable
+  tests in the suite.
 
 ## Examples
 
-The clearest examples are the [Tutorials](tutorials/index.md): each is a literate
-`.lhs` file that the test suite compiles and runs against a real Postgres, so the
-code on the page is the code that runs. Start with
+The tutorials are the worked examples. Each is a literate `.lhs` file that the
+test suite compiles and runs against a real Postgres, so the code on the page is
+the code that runs. Start with
 [Unit of Work](tutorials/Tutorial/UnitOfWork.lhs).
 
 ## Status
 
-Manifest is real and tested for the Unit of Work, relationships, cascades,
-migrations, and the Template Haskell entity front-end (the parts the reference
-pages document). One surface named in the design is **Planned**, not built — do
-not assume it works yet:
+The Unit of Work, relationships, cascades, migrations, and the Template Haskell
+entity front-end are built and tested (the parts the reference pages document).
+One surface named in the design is **Planned**, not built:
 
-- **Joins and aggregates in the query Core** — the standalone query AST does not
-  yet expose joins/aggregates (relationship loading *does* use a `LEFT JOIN`
-  internally; that is a separate, working path).
+- **Joins and aggregates in the query Core.** The standalone query AST does not
+  yet expose joins or aggregates. Relationship loading does use a `LEFT JOIN`
+  internally; that is a separate, working path.
 
-The **`mkEntity` Template Haskell macro** generates the `UserT f` record +
-`deriving Generic` + the `Entity` instance from one terse block
-([Entities](entities.md)); it builds the core entity, while relationships and
-cascades are still declared by hand. Hand-writing the record + instance remains
-fully supported and is what the snippets above show.
+The `mkEntity` macro generates the record, `deriving Generic`, and the `Entity`
+instance from one block (see [Entities](entities.md)). It builds the core entity;
+relationships and cascades are declared separately. Hand-writing the record and
+instance is fully supported and is what the snippets above show.
 
-The site is published by **GitHub Pages' built-in Jekyll build** of `docs/` —
-there is no Actions workflow. The tutorials run as tests and require a Postgres
-(the suite spins up an ephemeral one); a local Jekyll build is out of scope.
+The site is published by GitHub Pages' built-in Jekyll build of `docs/`; there is
+no Actions workflow. The tutorials run as tests and require a Postgres (the suite
+spins up an ephemeral one); a local Jekyll build is out of scope.

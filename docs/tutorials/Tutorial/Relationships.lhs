@@ -4,34 +4,34 @@ parent: Tutorials
 nav_order: 2
 ---
 
-# Relationships — load related rows two ways
+# Relationships: load related rows two ways
 
 > Runnable: this page is `docs/tutorials/Tutorial/Relationships.lhs`, compiled
 > and run by `zinc test` against a real Postgres. The Haskell you read below is
-> the Haskell that runs — if it stopped being true, this page would stop
+> the Haskell that runs; if it stopped being true, this page would stop
 > compiling.
 
-## Why
+## What this shows
 
-A `User` *has many* `Post`s; a `Post` *belongs to* a `User`. Manifest knows these
-relationships from the table records and gives you two complementary ways to pull
-related rows: a quick **A-path** (`load`) when you just want a list of children,
-and a structured **D-path** (`Ent` + `with`/`rel`) when you want to carry a value
-together with its loaded relations as a single typed bundle. Both go through the
-Unit-of-Work session, so anything they return is *managed* — edit it and the
-flush emits a minimal write, exactly as in the Unit of Work tutorial.
+A `User` has many `Post`s; a `Post` belongs to a `User`. Manifest knows these
+relationships from the table records and gives you two ways to pull related rows.
+The A-path (`load`) returns a list of children directly. The D-path
+(`Ent` plus `with`/`rel`) carries a value together with its loaded relations as a
+single typed bundle. Both go through the Unit-of-Work session, so anything they
+return is managed: edit it and the flush emits a minimal write, as in the Unit of
+Work tutorial.
 
-## What
+The two paths and the two strategies:
 
-* **A-path — `load`.** `load #posts user :: Db [Post]` runs one query keyed on the
+* **A-path, `load`.** `load #posts user :: Db [Post]` runs one query keyed on the
   foreign key (`post_author`) and hands you back the children directly.
-* **D-path — `Ent`.** `manage user` wraps the value in an `Ent` with an empty
-  load-set; `with (selectin #posts)` loads a relation into it; `rel #posts e`
-  reads it back. The `Ent` is a typed record of "this value plus the relations
-  I've loaded".
-* **Strategies — `selectin` vs `joined`.** `selectin` loads children with a
-  separate `SELECT … WHERE fk IN (…)`; `joined` folds them in with a `LEFT JOIN`.
-  Same result, different SQL — pick the one that suits your access pattern.
+* **D-path, `Ent`.** `manage user` wraps the value in an `Ent` with an empty
+  load-set; `with (selectin #posts)` loads a relation into it; `rel #posts e` reads
+  it back. The `Ent` is a typed record of "this value plus the relations I've
+  loaded".
+* **Strategies, `selectin` vs `joined`.** `selectin` loads children with a separate
+  `SELECT … WHERE fk IN (…)`; `joined` folds them in with a `LEFT JOIN`. Same result,
+  different SQL; pick the one that suits your access pattern.
 
 ## How
 
@@ -57,7 +57,7 @@ import Harness
 ### The A-path: `load #posts`
 
 We `add` a user and two posts authored by them, then `load #posts u`. The result
-is an ordinary `[Post]` — managed values you could go on to edit and `save`. We
+is an ordinary `[Post]` of managed values you could go on to edit and `save`. We
 assert on the titles.
 
 ```haskell
@@ -78,8 +78,8 @@ tests = group "Tutorial.Relationships"
 
 Here we keep the value and its children together. `manage u` produces an
 `Ent User` with nothing loaded; `with (selectin #posts)` loads the posts into it;
-`rel #posts e` reads them back. The bundle is typed — `rel #posts` only
-type-checks because `#posts` was loaded into `e`.
+`rel #posts e` reads them back. The bundle is typed: `rel #posts` only type-checks
+because `#posts` was loaded into `e`.
 
 ```haskell
   , test "D-path: with (selectin #posts) then rel #posts" $
@@ -117,9 +117,9 @@ inspect the session's `statementLog` to prove a `LEFT JOIN` was used.
 
 ## Examples
 
-The same shapes work for the *belongs-to* and *has-one* directions. A sketch
-(illustrative-only — this block renders but is **not** compiled, so it can elide
-the session plumbing):
+The same shapes work for the belongs-to and has-one directions. A sketch
+(illustrative only; this block renders but is not compiled, so it can elide the
+session plumbing):
 
 ```hs
 -- belongs-to: a Post's author (RelOne, keyed on post_author)
@@ -135,6 +135,6 @@ case rel #profile e of
   Nothing -> noProfile
 ```
 
-The lesson: `load` when you want children in hand, `Ent` + `with`/`rel` when you
-want a value and its relations as one typed bundle — and `selectin` vs `joined`
-to pick the SQL shape. Everything you get back is managed by the session.
+Use `load` when you want children in hand, and `Ent` plus `with`/`rel` when you
+want a value and its relations as one typed bundle, with `selectin` vs `joined` to
+pick the SQL shape. Everything you get back is managed by the session.
