@@ -1,3 +1,4 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE KindSignatures #-}
@@ -11,6 +12,7 @@ module Manifest.Query
   ( Query
   , TableElem
   , from
+  , where_
   , renderQuery
   , runQuery
   ) where
@@ -25,7 +27,7 @@ import GHC.TypeError (ErrorMessage (..), Unsatisfiable)
 import Type.Reflection (SomeTypeRep, someTypeRep)
 import Manifest.Core.Codec (RowDecoder, SqlParam, decodeRow)
 import Manifest.Core.Meta (ColumnMeta (..), TableMeta (..))
-import Manifest.Core.Query (Op (..))
+import Manifest.Core.Query (Cond (..), Op (..))
 import Manifest.Core.Sql (bcIntercalate)
 import Manifest.Entity (Entity (..))
 import Manifest.Error (DbError (..), DbException (..))
@@ -52,6 +54,17 @@ type family TableElem (a :: Type) (ts :: [Type]) :: Constraint where
     Unsatisfiable ('Text "Query: table " ':<>: 'ShowType a
               ':<>: 'Text " is not in scope for this query.")
 
+-- | Type improvement helper for 'where_' (and later condition combinators). A
+-- bare label like @#userName@ elaborates to @Column a t@ for an unconstrained
+-- @a@ (labels carry no entity), so @[Cond a]@ alone leaves @a@ ambiguous. For a
+-- single-table query @'[t]@ there is only one sensible choice, so @DefTable@
+-- pins @a ~ t@ and inference succeeds with no annotation. For a multi-table
+-- query @a@ is left as supplied — pick it with @\@T@ (the 'TableElem' guard then
+-- rejects any @T@ not in scope).
+type family DefTable (a :: Type) (ts :: [Type]) :: Type where
+  DefTable a '[t] = t
+  DefTable a _    = a
+
 qualifiedCols :: ByteString -> TableMeta a -> [ByteString]
 qualifiedCols alias tm = [ alias <> "." <> cmName c | c <- tmColumns tm ]
 
@@ -71,6 +84,22 @@ from =
        , qOffset  = Nothing
        , qDecode  = rowDecoder @a
        }
+
+-- | Look up an in-scope table's alias. Total when @TableElem a ts@ holds (from/
+-- innerJoin add every in-scope table to qAliases).
+aliasOf :: forall a ts r. Entity a => Query ts r -> ByteString
+aliasOf q =
+  case lookup (someTypeRep (Proxy @a)) (qAliases q) of
+    Just al -> al
+    Nothing -> error "Manifest.Query: alias missing (internal invariant violated)"
+
+-- | Add ANDed conditions on table @a@ (must be in scope). Each condition's column
+-- is qualified with @a@'s alias.
+where_ :: forall a ts r. (Entity a, TableElem a ts, a ~ DefTable a ts) => [Cond a] -> Query ts r -> Query ts r
+where_ conds q =
+  let al = aliasOf @a q
+      qcs = [ QCond (al <> "." <> col) op p | Cond col op p <- conds ]
+  in q { qWhere = qWhere q ++ qcs }
 
 renderOp :: Op -> ByteString
 renderOp OpEq = "="
