@@ -21,6 +21,7 @@ import qualified CascadeSpec
 import qualified SelfRefSpec
 import qualified NestedSpec
 import qualified Tutorial.UnitOfWork
+import qualified Tutorial.Relationships
 
 main :: IO ()
-main = runTests (CodecSpec.tests ++ PostgresSpec.tests ++ MetaSpec.tests ++ MigrateMetaSpec.tests ++ MigrateSqlSpec.tests ++ MigrateSpec.tests ++ SqlSpec.tests ++ SessionSpec.tests ++ FlushSpec.tests ++ CommandSpec.tests ++ EndToEndSpec.tests ++ RelationSpec.tests ++ EntSpec.tests ++ RelationErrorSpec.tests ++ RelE2ESpec.tests ++ JoinedSpec.tests ++ CascadeSpec.tests ++ SelfRefSpec.tests ++ NestedSpec.tests ++ Tutorial.UnitOfWork.tests)
+main = runTests (CodecSpec.tests ++ PostgresSpec.tests ++ MetaSpec.tests ++ MigrateMetaSpec.tests ++ MigrateSqlSpec.tests ++ MigrateSpec.tests ++ SqlSpec.tests ++ SessionSpec.tests ++ FlushSpec.tests ++ CommandSpec.tests ++ EndToEndSpec.tests ++ RelationSpec.tests ++ EntSpec.tests ++ RelationErrorSpec.tests ++ RelE2ESpec.tests ++ JoinedSpec.tests ++ CascadeSpec.tests ++ SelfRefSpec.tests ++ NestedSpec.tests ++ Tutorial.UnitOfWork.tests ++ Tutorial.Relationships.tests)
