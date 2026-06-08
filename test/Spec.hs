@@ -5,6 +5,7 @@ import qualified CodecSpec
 import qualified PostgresSpec
 import qualified MetaSpec
 import qualified MigrateMetaSpec
+import qualified MigrateSqlSpec
 import qualified SqlSpec
 import qualified SessionSpec
 import qualified FlushSpec
@@ -20,4 +21,4 @@ import qualified SelfRefSpec
 import qualified NestedSpec
 
 main :: IO ()
-main = runTests (CodecSpec.tests ++ PostgresSpec.tests ++ MetaSpec.tests ++ MigrateMetaSpec.tests ++ SqlSpec.tests ++ SessionSpec.tests ++ FlushSpec.tests ++ CommandSpec.tests ++ EndToEndSpec.tests ++ RelationSpec.tests ++ EntSpec.tests ++ RelationErrorSpec.tests ++ RelE2ESpec.tests ++ JoinedSpec.tests ++ CascadeSpec.tests ++ SelfRefSpec.tests ++ NestedSpec.tests)
+main = runTests (CodecSpec.tests ++ PostgresSpec.tests ++ MetaSpec.tests ++ MigrateMetaSpec.tests ++ MigrateSqlSpec.tests ++ SqlSpec.tests ++ SessionSpec.tests ++ FlushSpec.tests ++ CommandSpec.tests ++ EndToEndSpec.tests ++ RelationSpec.tests ++ EntSpec.tests ++ RelationErrorSpec.tests ++ RelE2ESpec.tests ++ JoinedSpec.tests ++ CascadeSpec.tests ++ SelfRefSpec.tests ++ NestedSpec.tests)
