@@ -41,6 +41,29 @@ instance Entity Secret where
 secretsDDL :: Data.ByteString.ByteString
 secretsDDL = "CREATE TABLE secrets ( secret_id BIGSERIAL PRIMARY KEY, secret_org TEXT NOT NULL, secret_body TEXT NOT NULL )"
 
+-- A second entity whose policy uses the missing-ok 'currentSettingOr': when the
+-- context GUC is unset it falls back to a sentinel that matches no row, so a
+-- context-less query returns nothing instead of erroring.
+data VaultT f = Vault
+  { vaultId   :: Col f (PrimaryKey (Serial Int))
+  , vaultOrg  :: Col f Text
+  , vaultBody :: Col f Text
+  } deriving GHC.Generics.Generic
+type Vault = VaultT Data.Functor.Identity.Identity
+
+instance Entity Vault where
+  type PrimKey Vault = Int
+  tableMeta  = genericTableMeta @VaultT "vaults"
+  rowDecoder = genericRowDecoder
+  rowEncode  = genericRowEncode
+  primKey    = vaultId
+  rlsPolicies =
+    [ policy "org_isolation_soft"
+        `using` (\v -> v ^. #vaultOrg .== currentSettingOr "app.current_org" "__none__") ]
+
+vaultsDDL :: Data.ByteString.ByteString
+vaultsDDL = "CREATE TABLE vaults ( vault_id BIGSERIAL PRIMARY KEY, vault_org TEXT NOT NULL, vault_body TEXT NOT NULL )"
+
 execDb_ :: Data.ByteString.ByteString -> Db ()
 execDb_ s = void (execDb s [])
 
@@ -107,4 +130,32 @@ tests = group "Rls"
         liftIO $ do
           assertEqual "acme sees only its row"   ["a1"] acme
           assertEqual "globex sees only its row" ["g1"] globex
+  , test "currentSettingOr renders coalesce(current_setting('name', true), 'default')" $ do
+      let pd = policyDef
+                 (policy "p"
+                    `using` (\u -> u ^. #userName .== currentSettingOr "app.current_org" "__none__")
+                  :: Policy User)
+      assertEqual "using"
+        (Just "user_name = coalesce(current_setting('app.current_org', true), '__none__')")
+        (pdUsing pd)
+  , test "a currentSettingOr policy returns no rows (not an error) when context is unset" $
+      withEmptyDb $ \pool -> withSession pool $ do
+        execDb_ vaultsDDL
+        _ <- add (Vault { vaultId = 0, vaultOrg = "acme", vaultBody = "v1" } :: Vault)
+        _ <- migrateUp [managed (Proxy @Vault)]
+        execDb_ "DROP ROLE IF EXISTS rls_tenant2"
+        execDb_ "CREATE ROLE rls_tenant2 NOLOGIN"
+        execDb_ "GRANT SELECT ON vaults TO rls_tenant2"
+        unset <- withTransaction $ do            -- no withRlsContext: soft fallback, no error
+          execDb_ "SET LOCAL ROLE rls_tenant2"
+          rows <- execDb "SELECT vault_body FROM vaults" []
+          pure [ b | [Just b] <- rows ]
+        set_ <- withTransaction $ do
+          execDb_ "SET LOCAL ROLE rls_tenant2"
+          withRlsContext [("app.current_org", "acme")] $ do
+            rows <- execDb "SELECT vault_body FROM vaults" []
+            pure [ b | [Just b] <- rows ]
+        liftIO $ do
+          assertEqual "unset context -> no rows, no error" [] unset
+          assertEqual "set context -> the row" ["v1"] set_
   ]

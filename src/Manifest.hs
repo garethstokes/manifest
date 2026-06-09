@@ -123,6 +123,7 @@ module Manifest
   , forCommand
   , Self
   , currentSetting
+  , currentSettingOr
   , lit
   , withRlsContext
     -- * Errors
@@ -146,7 +147,7 @@ import Manifest.Query
   , withCte, fromCte, CteRef, innerJoin, leftJoin, rightJoin, fullJoin, opt, (^.), val
   , (.==), (./=), (.>), (.<), (.&&), where_, having, distinct, orderBy, asc, desc
   , limit, offset, groupBy, countRows, sum_, avg_, min_, max_
-  , OrderTerm, Selectable (Result), runQuery, Self, currentSetting, lit )
+  , OrderTerm, Selectable (Result), runQuery, Self, currentSetting, currentSettingOr, lit )
 import Manifest.Core.Rls
   ( Policy, PolicyCmd (..) )
 import Manifest.Rls
