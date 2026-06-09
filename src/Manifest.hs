@@ -91,9 +91,13 @@ module Manifest
   , Member
     -- * Column-type classes (for newtype columns)
   , DbType (..)
-  , ToField (..)
-  , FromField (..)
-  , ScalarMeta (..)
+  , Codec (..)
+  , encode
+  , dimap
+  , lmap
+  , rmap
+  , refine
+  , nullable
   , SqlType (..)
     -- * Table metadata
   , Serial
@@ -183,14 +187,18 @@ import Manifest.Relation.Loaded
   )
 import Manifest.Core.Codec
   ( DbType (..)
-  , ToField (..)
-  , FromField (..)
+  , Codec (..)
+  , encode
+  , dimap
+  , lmap
+  , rmap
+  , refine
+  , nullable
   )
 import Manifest.Core.Table
   ( Serial
   , PrimaryKey
   , Col
-  , ScalarMeta (..)
   )
 import Manifest.Core.Meta
   ( genericTableMeta

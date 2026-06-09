@@ -35,17 +35,17 @@ isRight (Left _)  = False
 tests :: [Test]
 tests = group "Codec"
   [ test "encodes scalars to text params" $ do
-      assertEqual "int"     (Just (BC.pack "42")) (toField (42 :: Int))
-      assertEqual "string"  (Just (BC.pack "hi")) (toField ("hi" :: String))
-      assertEqual "nothing" (Nothing :: Maybe BC.ByteString) (toField (Nothing :: Maybe Int))
-      assertEqual "just"    (Just (BC.pack "7")) (toField (Just (7 :: Int)))
+      assertEqual "int"     (Just (BC.pack "42")) (encode (42 :: Int))
+      assertEqual "string"  (Just (BC.pack "hi")) (encode ("hi" :: String))
+      assertEqual "nothing" (Nothing :: Maybe BC.ByteString) (encode (Nothing :: Maybe Int))
+      assertEqual "just"    (Just (BC.pack "7")) (encode (Just (7 :: Int)))
   , test "decodes scalars from text params" $ do
-      assertEqual "int"       (Right (42 :: Int)) (fromField (Just (BC.pack "42")))
-      assertEqual "maybe-null"(Right (Nothing :: Maybe Int)) (fromField Nothing)
+      assertEqual "int"       (Right (42 :: Int)) (cDecode (dbType @Int) (Just (BC.pack "42")))
+      assertEqual "maybe-null"(Right (Nothing :: Maybe Int)) (cDecode (dbType @(Maybe Int)) Nothing)
       assertBool  "bad int is Left"
-        (either (const True) (const False) (fromField (Just (BC.pack "x")) :: Either DecodeError Int))
+        (either (const True) (const False) (cDecode (dbType @Int) (Just (BC.pack "x"))))
   , test "applicative RowDecoder runs left-to-right with no arity ceiling" $ do
-      let dec = (,,,,) <$> field <*> field <*> field <*> field <*> field
+      let dec = (,,,,) <$> decodeCol <*> decodeCol <*> decodeCol <*> decodeCol <*> decodeCol
           row = [ Just (BC.pack "1"), Just (BC.pack "a"), Nothing
                 , Just (BC.pack "t"), Just (BC.pack "9") ]
       assertEqual "5-tuple"

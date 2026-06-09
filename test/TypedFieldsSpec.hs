@@ -29,15 +29,15 @@ import Harness
 -- column-type classes are re-exported from the umbrella.
 newtype Email = Email Text
   deriving stock (Eq, Show)
-  deriving newtype (ToField, FromField, ScalarMeta, DbType)
+  deriving newtype DbType
 
 newtype AccountId = AccountId Int
   deriving stock (Eq, Show)
-  deriving newtype (ToField, FromField, ScalarMeta, DbType)
+  deriving newtype DbType
 
 newtype NoteId = NoteId Int
   deriving stock (Eq, Show)
-  deriving newtype (ToField, FromField, ScalarMeta, DbType)
+  deriving newtype DbType
 
 data AccountT f = Account
   { accountId   :: Col f (PrimaryKey (Serial AccountId))   -- runtime AccountId; column BIGSERIAL
@@ -79,10 +79,9 @@ wrongIdSource = unlines
   , "module WrongId where"
   , "import Data.Functor.Identity (Identity)"
   , "import Manifest (Col)"
-  , "import Manifest.Core.Codec (ToField, FromField)"
-  , "import Manifest.Core.Table (ScalarMeta)"
-  , "newtype AccountId = AccountId Int deriving newtype (ToField, FromField, ScalarMeta)"
-  , "newtype NoteId    = NoteId Int    deriving newtype (ToField, FromField, ScalarMeta)"
+  , "import Manifest.Core.Codec (DbType)"
+  , "newtype AccountId = AccountId Int deriving newtype DbType"
+  , "newtype NoteId    = NoteId Int    deriving newtype DbType"
   , "data R f = R { rAcc :: Col f AccountId }"
   , "boom :: R Identity"
   , "boom = R { rAcc = NoteId 1 }"
@@ -93,7 +92,7 @@ tests = group "TypedFields"
   [ test "a newtype column round-trips through the codec" $
       assertEqual "Email round-trip"
         (Right (Email "ada@x.io"))
-        (fromField (toField (Email "ada@x.io")))
+        (cDecode dbType (encode (Email "ada@x.io")))
   , test "typed PK and typed FK round-trip end to end" $
       withEmptyDb $ \pool -> do
         withConnection pool (\c -> execText c accountsDDL [] >> execText c notesDDL [])

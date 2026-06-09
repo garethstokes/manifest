@@ -11,13 +11,11 @@ module Manifest.Core.Table
   , Exposed
   , Base
   , Col
-  , ScalarMeta(..)
   , FieldMeta(..)
   ) where
 
 import Data.Functor.Identity (Identity)
 import Data.Kind (Type)
-import Data.Text (Text)
 import Manifest.Core.SqlType (SqlType(..))
 import Manifest.Core.Codec (DbType(..), Codec(..))
 
@@ -42,18 +40,6 @@ type family Base (a :: Type) :: Type where
 type family Col (f :: Type -> Type) (a :: Type) :: Type where
   Col Identity a = Base a
   Col Exposed  a = Exposed a
-
--- | Map a base scalar to its column type + nullability.
-class ScalarMeta a where
-  scalarType     :: SqlType
-  scalarNullable :: Bool
-
-instance ScalarMeta Int  where { scalarType = SqlBigInt; scalarNullable = False }
-instance ScalarMeta Text where { scalarType = SqlText;   scalarNullable = False }
-instance ScalarMeta Bool where { scalarType = SqlBool;   scalarNullable = False }
-instance ScalarMeta a => ScalarMeta (Maybe a) where
-  scalarType     = scalarType @a
-  scalarNullable = True
 
 -- | Reflect a field's PK/serial flags + SQL type/nullability from its marker
 -- structure (used by the deriver).
