@@ -20,6 +20,7 @@ module Manifest.Query
   , val
   , (.==), (./=), (.>), (.<), (.&&)
   , where_
+  , having, distinct
   , orderBy, asc, desc, limit, offset, OrderTerm
   , groupBy, countRows, sum_, avg_, min_, max_
   , Selectable (Result)
@@ -56,10 +57,13 @@ data QueryState = QueryState
   , qsWith   :: [ByteString]     -- rendered "cteN AS (subsql)" fragments
   , qsWithP  :: [SqlParam]       -- subquery params, in order (render before SELECT)
   , qsCte    :: Int              -- next CTE index
+  , qsHaving   :: [ByteString]
+  , qsHavingP  :: [SqlParam]
+  , qsDistinct :: Bool
   }
 
 emptyState :: QueryState
-emptyState = QueryState 0 "" [] [] [] [] [] Nothing Nothing [] [] 0
+emptyState = QueryState 0 "" [] [] [] [] [] Nothing Nothing [] [] 0 [] [] False
 
 newtype Handle e = Handle ByteString
 data    Expr t   = Expr ByteString [SqlParam]
@@ -178,6 +182,16 @@ where_ :: Expr Bool -> QueryM ()
 where_ (Expr t ps) = QueryM $ modify' $ \st ->
   st { qsWhere = qsWhere st ++ [t], qsWhereP = qsWhereP st ++ ps }
 
+-- | A HAVING predicate over a grouped query (typically over an aggregate, e.g.
+-- @having (countRows .> val 1)@). Multiple calls are ANDed.
+having :: Expr Bool -> QueryM ()
+having (Expr t ps) = QueryM $ modify' $ \st ->
+  st { qsHaving = qsHaving st ++ [t], qsHavingP = qsHavingP st ++ ps }
+
+-- | Make the query a @SELECT DISTINCT@.
+distinct :: QueryM ()
+distinct = QueryM $ modify' $ \st -> st { qsDistinct = True }
+
 newtype OrderTerm = OrderTerm ByteString
 
 asc, desc :: Expr t -> OrderTerm
@@ -273,14 +287,16 @@ renderRaw qm =
   let (sel, st) = runQueryM qm
       withTxt  = if null (qsWith st) then ""
                  else "WITH " <> bcIntercalate ", " (qsWith st) <> " "
+      selKw    = if qsDistinct st then "SELECT DISTINCT " else "SELECT "
       whereTxt = if null (qsWhere st) then "" else " WHERE " <> bcIntercalate " AND " (qsWhere st)
       groupTxt = if null (qsGroup st) then "" else " GROUP BY " <> bcIntercalate ", " (qsGroup st)
+      havingTxt = if null (qsHaving st) then "" else " HAVING " <> bcIntercalate " AND " (qsHaving st)
       orderTxt = if null (qsOrder st) then "" else " ORDER BY " <> bcIntercalate ", " (qsOrder st)
       limTxt   = maybe "" (\n -> " LIMIT "  <> BC.pack (show n)) (qsLimit st)
       offTxt   = maybe "" (\n -> " OFFSET " <> BC.pack (show n)) (qsOffset st)
-      raw = withTxt <> "SELECT " <> selCols sel <> " FROM " <> qsFrom st
-              <> whereTxt <> groupTxt <> orderTxt <> limTxt <> offTxt
-      params = qsWithP st ++ selParams sel ++ qsFromP st ++ qsWhereP st
+      raw = withTxt <> selKw <> selCols sel <> " FROM " <> qsFrom st
+              <> whereTxt <> groupTxt <> havingTxt <> orderTxt <> limTxt <> offTxt
+      params = qsWithP st ++ selParams sel ++ qsFromP st ++ qsWhereP st ++ qsHavingP st
   in (raw, params)
 
 renderQueryM :: Selectable s => QueryM s -> (ByteString, [SqlParam])
