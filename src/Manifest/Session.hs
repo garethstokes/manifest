@@ -40,7 +40,7 @@ import Data.Text (Text)
 import qualified Data.Text.Encoding as TE
 import Type.Reflection (SomeTypeRep)
 import Manifest.Core.Cascade (OnDelete(..), CascadeRule(..))
-import Manifest.Core.Codec (SqlParam, ToField(..), decodeRow)
+import Manifest.Core.Codec (SqlParam, DbType, encode, decodeRow)
 import Manifest.Core.Meta (ColumnMeta(..), TableMeta(..), pkColumn, cmName, cmIsSerial, cmIsPK)
 import Manifest.Core.Query (Cond(..), Op(..))
 import Manifest.Core.Sql (renderSelect, renderInsert, renderUpdate, renderDelete)
@@ -121,12 +121,12 @@ autoflushHook = do
   if on then flush else pure ()
 
 -- | Load by primary key; records a baseline snapshot for the loaded entity.
-get :: forall a. (Entity a, ToField (PrimKey a)) => Key a -> Db (Maybe a)
+get :: forall a. (Entity a, DbType (PrimKey a)) => Key a -> Db (Maybe a)
 get (Key k) = do
   autoflushHook
   let tm  = tableMeta @a
-      sql = renderSelect tm [Cond (cmName (pkColumn tm)) OpEq (toField k)]
-  rows <- execDb sql [toField k]
+      sql = renderSelect tm [Cond (cmName (pkColumn tm)) OpEq (encode k)]
+  rows <- execDb sql [encode k]
   case rows of
     []        -> pure Nothing
     (row : _) -> do

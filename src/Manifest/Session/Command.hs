@@ -11,7 +11,7 @@ module Manifest.Session.Command
   , deleteWhere
   ) where
 
-import Manifest.Core.Codec (ToField(..))
+import Manifest.Core.Codec (DbType, encode)
 import Manifest.Core.Meta (TableMeta(..), pkColumn, cmName)
 import Manifest.Core.Query (Assign(..), Cond(..))
 import Manifest.Core.Sql (renderConds, renderUpdate)
@@ -20,11 +20,11 @@ import Manifest.Session (Db, execDb)
 
 -- | Blind single-row UPDATE by primary key. Sets the given assignments with no
 -- snapshot diff; the PK placeholder is bound LAST (after the SET values).
-update :: forall a. (Entity a, ToField (PrimKey a)) => Key a -> [Assign a] -> Db ()
+update :: forall a. (Entity a, DbType (PrimKey a)) => Key a -> [Assign a] -> Db ()
 update key assigns = do
   let tm  = tableMeta @a
       sql = renderUpdate tm [ c | Assign c _ <- assigns ] (cmName (pkColumn tm))
-      ps  = [ v | Assign _ v <- assigns ] ++ [ toField (unKey key) ]
+      ps  = [ v | Assign _ v <- assigns ] ++ [ encode (unKey key) ]
   _ <- execDb sql ps
   pure ()
 

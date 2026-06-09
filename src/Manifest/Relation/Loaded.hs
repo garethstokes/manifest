@@ -36,7 +36,7 @@ import Data.Proxy (Proxy(..))
 import Data.Typeable (Typeable)
 import GHC.TypeError (Unsatisfiable, ErrorMessage(..))
 import GHC.TypeLits (CmpSymbol, KnownSymbol, Symbol, symbolVal)
-import Manifest.Core.Codec (SqlParam, ToField)
+import Manifest.Core.Codec (SqlParam, DbType)
 import Manifest.Core.Meta (ColumnMeta(..), TableMeta(..), pkColumn)
 import Manifest.Core.Query (Rel)
 import Manifest.Core.Relation (HasRelation(..), RelSpec(..))
@@ -61,7 +61,7 @@ manage :: a -> Ent '[] a
 manage v = Ent v Map.empty
 
 -- | Load by PK into the D path (nothing loaded yet).
-getEnt :: (Entity a, ToField (PrimKey a)) => Key a -> Db (Maybe (Ent '[] a))
+getEnt :: (Entity a, DbType (PrimKey a)) => Key a -> Db (Maybe (Ent '[] a))
 getEnt k = fmap manage <$> get k
 
 -- | A loading strategy for relation @name@.

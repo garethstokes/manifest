@@ -21,7 +21,7 @@ import Data.Kind (Type)
 import Data.Proxy (Proxy(..))
 import GHC.OverloadedLabels (IsLabel(..))
 import GHC.TypeLits (KnownSymbol, Symbol, symbolVal)
-import Manifest.Core.Codec (SqlParam, ToField(..))
+import Manifest.Core.Codec (SqlParam, DbType, encode)
 import Manifest.Core.Meta (camelToSnake)
 
 -- | A typed reference to column @t@ of table @a@. @#userName :: Column User Text@.
@@ -57,12 +57,12 @@ data Assign a = Assign ByteString SqlParam
   deriving (Eq, Show)
 
 infix 4 ==., /=., >., <.
-(==.), (/=.), (>.), (<.) :: ToField t => Column a t -> t -> Cond a
-Column n ==. v = Cond n OpEq  (toField v)
-Column n /=. v = Cond n OpNeq (toField v)
-Column n >.  v = Cond n OpGt  (toField v)
-Column n <.  v = Cond n OpLt  (toField v)
+(==.), (/=.), (>.), (<.) :: DbType t => Column a t -> t -> Cond a
+Column n ==. v = Cond n OpEq  (encode v)
+Column n /=. v = Cond n OpNeq (encode v)
+Column n >.  v = Cond n OpGt  (encode v)
+Column n <.  v = Cond n OpLt  (encode v)
 
 infix 4 =.
-(=.) :: ToField t => Column a t -> t -> Assign a
-Column n =. v = Assign n (toField v)
+(=.) :: DbType t => Column a t -> t -> Assign a
+Column n =. v = Assign n (encode v)
