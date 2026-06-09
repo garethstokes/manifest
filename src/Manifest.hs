@@ -57,6 +57,8 @@ module Manifest
   , (.@>)
   , (.->)
   , (.->>)
+  , (.#>)
+  , (.#>>)
   , where_
   , having
   , distinct
@@ -106,6 +108,7 @@ module Manifest
   , SqlType (..)
     -- * JSONB columns
   , Json (..)
+  , Aeson (..)
   , HasCodec (..)
     -- * Table metadata
   , Serial
@@ -163,7 +166,7 @@ import Manifest.Core.Query
 import Manifest.Query
   ( QueryM, Handle, OptHandle, Projectable, Expr, from
   , withCte, fromCte, CteRef, innerJoin, leftJoin, rightJoin, fullJoin, opt, (^.), val
-  , (.==), (./=), (.>), (.<), (.&&), Jsonb, JsonbExpr, (.@>), (.->), (.->>), where_, having, distinct, orderBy, asc, desc
+  , (.==), (./=), (.>), (.<), (.&&), Jsonb, JsonbExpr, (.@>), (.->), (.->>), (.#>), (.#>>), where_, having, distinct, orderBy, asc, desc
   , limit, offset, groupBy, countRows, sum_, avg_, min_, max_
   , OrderTerm, Selectable (Result), runQuery, Self, currentSetting, currentSettingOr, lit )
 import Manifest.Core.Rls
@@ -207,6 +210,7 @@ import Manifest.Core.Codec
   )
 import Manifest.Json
   ( Json (..)
+  , Aeson (..)
   )
 import Autodocodec
   ( HasCodec (..)

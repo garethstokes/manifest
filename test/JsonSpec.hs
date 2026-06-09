@@ -9,6 +9,7 @@
 module JsonSpec (tests) where
 
 import Autodocodec
+import Data.Aeson (ToJSON, FromJSON)
 import qualified Data.ByteString.Char8 as BC
 import Data.Functor.Identity (Identity)
 import Data.Text (Text)
@@ -21,6 +22,11 @@ import Harness (Test, group, test, assertEqual, assertBool)
 
 data Prefs = Prefs { prefTheme :: Text, prefTags :: [Text] }
   deriving (Eq, Show)
+
+data Doc = Doc { docTitle :: Text, docCount :: Int }
+  deriving (Eq, Show, Generic)
+instance ToJSON Doc
+instance FromJSON Doc
 
 instance HasCodec Prefs where
   codec = object "Prefs" $
@@ -80,4 +86,19 @@ tests = group "Json"
           pure (map (unJson . settingPrefs) (bt :: [Setting]), map (unJson . settingPrefs) (bc :: [Setting]))
         assertEqual "->> theme=dark finds the dark row"  [Prefs "dark"  ["x"]] byText
         assertEqual "@> finds the light row"             [Prefs "light" ["y"]] byContain
+  , test "jsonb path operators #> and #>> navigate the document" $
+      withEmptyDb $ \pool -> do
+        withConnection pool (\c -> execText c settingsDDL [])
+        rows <- withSession pool $ do
+          _ <- add (Setting { settingId = 0, settingPrefs = Json (Prefs "dark"  ["x"]), settingNote = Nothing } :: Setting)
+          _ <- add (Setting { settingId = 0, settingPrefs = Json (Prefs "light" ["y"]), settingNote = Nothing } :: Setting)
+          runQuery $ do
+            s <- from @Setting
+            where_ ((s ^. #settingPrefs :: Expr (Json Prefs)) .#>> ["theme"] .== val ("light" :: Text))
+            pure s
+        assertEqual "#>> [theme] = light finds the light row" [Prefs "light" ["y"]] (map (unJson . settingPrefs) (rows :: [Setting]))
+  , test "Aeson column round-trips via aeson instances and is jsonb" $ do
+      let d = Doc "hi" 3
+      assertEqual "sqltype jsonb" SqlJsonb (cSqlType (dbType @(Aeson Doc)))
+      assertEqual "decode . encode = id" (Right (Aeson d)) (cDecode (dbType @(Aeson Doc)) (cEncode (dbType @(Aeson Doc)) (Aeson d)))
   ]
