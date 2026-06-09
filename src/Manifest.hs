@@ -124,6 +124,7 @@ module Manifest
   , Self
   , currentSetting
   , lit
+  , withRlsContext
     -- * Errors
   , DbError(..)
   , DbException(..)
@@ -219,6 +220,7 @@ import Manifest.Session
   ( Db
   , withSession
   , withTransaction
+  , withRlsContext
   , flush
   , statementLog
   , get
