@@ -26,6 +26,7 @@ module Manifest.Query
   , Selectable (Result)
   , Self (..)
   , currentSetting
+  , currentSettingOr
   , lit
   , renderPredicate
   , renderQueryM
@@ -104,8 +105,17 @@ instance Projectable Self where
   Self ^. Column c = Expr c []
 
 -- | @current_setting('name')@ — read a GUC the app set with 'withRlsContext'.
+-- Errors if the GUC was never set; see 'currentSettingOr' for a missing-ok form.
 currentSetting :: Text -> Expr Text
 currentSetting name = Expr ("current_setting(" <> quoteLit name <> ")") []
+
+-- | A missing-ok variant: @coalesce(current_setting('name', true), 'default')@. It
+-- does not error when the GUC is unset; it falls back to @default@. Pick a sentinel
+-- default that matches no real value so a policy degrades to "no rows" (rather than
+-- erroring the query) when 'withRlsContext' was not used.
+currentSettingOr :: Text -> Text -> Expr Text
+currentSettingOr name def =
+  Expr ("coalesce(current_setting(" <> quoteLit name <> ", true), " <> quoteLit def <> ")") []
 
 -- | An inline single-quoted SQL string literal (for DDL predicates; not a bound param).
 lit :: Text -> Expr a

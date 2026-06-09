@@ -57,6 +57,17 @@ configuration parameter`) when the GUC has not been set, so a query that forgets
 context fails rather than returning the wrong rows. That is fail-closed, but it does
 mean a missing context is a query error, not an empty result.
 
+If you prefer a missing context to yield no rows instead of an error, write the
+predicate with `currentSettingOr name default` instead of `currentSetting`. It
+renders `coalesce(current_setting('name', true), 'default')`, so an unset GUC falls
+back to `default`; pick a sentinel that matches no real value:
+
+```haskell
+rlsPolicies =
+  [ policy "org_isolation"
+      `using` (\s -> s ^. #secretOrg .== currentSettingOr "app.current_org" "__none__") ]
+```
+
 ## Notes and limits
 
 * RLS does not apply to superusers or roles with `BYPASSRLS`; connect as a normal
