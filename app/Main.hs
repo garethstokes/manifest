@@ -1,6 +1,8 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 
@@ -24,12 +26,7 @@ data NoteT f = Note
   } deriving Generic
 type Note = NoteT Identity
 
-instance Entity Note where
-  type PrimKey Note = Int
-  tableMeta  = genericTableMeta @NoteT "notes"
-  rowDecoder = genericRowDecoder
-  rowEncode  = genericRowEncode
-  primKey    = noteId
+deriving via (Table "notes" NoteT) instance Entity Note
 
 schema :: [ManagedTable]
 schema = [ managed (Proxy @Note) ]

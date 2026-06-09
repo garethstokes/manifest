@@ -23,6 +23,7 @@ module Manifest
     -- * Entities & keys
   , Entity(..)
   , Key(..)
+  , Table(..)
     -- * Query DSL
   , Column(..)
   , Rel(..)
@@ -100,9 +101,6 @@ module Manifest
   , genericTableMeta
   , genericRowDecoder
   , genericRowEncode
-    -- * Template Haskell front-end
-  , mkEntity
-  , field
     -- * Connection pool
   , newPool
   , closePool
@@ -202,9 +200,8 @@ import Manifest.Entity
   , genericRowDecoder
   , genericRowEncode
   )
-import Manifest.Derive.TH
-  ( mkEntity
-  , field
+import Manifest.Derive
+  ( Table(..)
   )
 import Manifest.Postgres
   ( newPool

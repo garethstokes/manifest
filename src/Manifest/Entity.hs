@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -7,36 +8,77 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Manifest.Entity
   ( Entity(..)
+  , Table(..)
+  , PrimKey
+  , GPrimKeyType
   , Key(..)
+  , GRowDecode
+  , GRowEncode
   , genericRowDecoder
   , genericRowEncode
+  , genericPrimKey
   , identityKey
   , pkParam
   , pkIndex
   ) where
 
+import Data.Functor.Identity (Identity)
 import Data.Kind (Type)
 import Data.List (findIndex)
 import Data.Maybe (fromMaybe)
 import Type.Reflection (Typeable, SomeTypeRep, someTypeRep)
 import Data.Proxy (Proxy(..))
 import GHC.Generics
+import GHC.TypeLits (Symbol, TypeError, ErrorMessage(..))
 import Manifest.Core.Cascade (CascadeRule)
 import Manifest.Core.Rls (Policy)
-import Manifest.Core.Codec (FromField, RowDecoder, SqlParam, ToField(..), field)
+import Manifest.Core.Codec (FromField, fromField, RowDecoder, SqlParam, ToField(..), field)
 import Manifest.Core.Meta (ColumnMeta(..), TableMeta(..))
+import Manifest.Core.Table (Exposed, Base)
 
--- | The class the Unit-of-Work operates over. SP1 derives every method
--- generically except 'primKey' (the PK selector) and 'tableMeta' (the table name).
+-- | The @deriving via@ carrier. @Table name t@ wraps @t Identity@ with the
+-- table name carried at the type level, so an entity becomes a one-liner:
+-- @deriving via (Table "posts" PostT) instance Entity Post@.
+newtype Table (name :: Symbol) (t :: (Type -> Type) -> Type) = Table (t Identity)
+
+-- | The primary-key runtime type of an entity. By convention the PK is the
+-- FIRST field; we walk the @t Exposed@ rep to it and take the 'Base' of its
+-- marker.
+type family PrimKey a where
+  PrimKey (Table name t) = GPrimKeyType (Rep (t Exposed))
+  PrimKey (t Identity)   = GPrimKeyType (Rep (t Exposed))
+
+-- | The PK is, by convention, the FIRST field. Walk to it and take the Base of
+-- its marker.
+type family GPrimKeyType (rep :: Type -> Type) :: Type where
+  GPrimKeyType (D1 m f) = GPrimKeyType f
+  GPrimKeyType (C1 m f) = GPrimKeyType f
+  GPrimKeyType ((S1 m (Rec0 (Exposed inner))) :*: rest) = Base inner
+  GPrimKeyType (S1 m (Rec0 (Exposed inner)))            = Base inner
+  GPrimKeyType other =
+    TypeError ('Text "Manifest: an entity must be a single-constructor record with its primary key as the first field")
+
+-- | The class the Unit-of-Work operates over. Every method has a Generics-based
+-- default except 'tableMeta' (which needs the table name).
 class Typeable a => Entity a where
-  type PrimKey a
   tableMeta  :: TableMeta a
+
   rowDecoder :: RowDecoder a
+  default rowDecoder :: (Generic a, GRowDecode (Rep a)) => RowDecoder a
+  rowDecoder = genericRowDecoder
+
   rowEncode  :: a -> [SqlParam]
-  primKey    :: a -> PrimKey a
+  default rowEncode :: (Generic a, GRowEncode (Rep a)) => a -> [SqlParam]
+  rowEncode = genericRowEncode
+
+  primKey :: a -> PrimKey a
+  default primKey :: FromField (PrimKey a) => a -> PrimKey a
+  primKey = genericPrimKey
+
   -- | onDelete cascade rules applied when a value of this type is deleted.
   -- Default: none. Override with the 'cascade' builder.
   cascadeRules :: [CascadeRule]
@@ -81,6 +123,14 @@ instance ToField t => GRowEncode (S1 m (Rec0 t)) where
 -- 'tableMeta' column order.
 genericRowEncode :: (Generic a, GRowEncode (Rep a)) => a -> [SqlParam]
 genericRowEncode = gRowEncode . from
+
+-- | Default 'primKey': re-encode the row, take the PK column's 'SqlParam', and
+-- decode it back to 'PrimKey a'.
+genericPrimKey :: forall a. (Entity a, FromField (PrimKey a)) => a -> PrimKey a
+genericPrimKey a =
+  case fromField (rowEncode a !! pkIndex @a) of
+    Right v  -> v
+    Left err -> error ("Manifest.genericPrimKey: " <> show err)
 
 -- Identity helpers ------------------------------------------------------------
 

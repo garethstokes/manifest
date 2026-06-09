@@ -30,11 +30,7 @@ data SecretT f = Secret
 type Secret = SecretT Data.Functor.Identity.Identity
 
 instance Entity Secret where
-  type PrimKey Secret = Int
   tableMeta  = genericTableMeta @SecretT "secrets"
-  rowDecoder = genericRowDecoder
-  rowEncode  = genericRowEncode
-  primKey    = secretId
   rlsPolicies =
     [ policy "org_isolation" `using` (\s -> s ^. #secretOrg .== currentSetting "app.current_org") ]
 
@@ -52,11 +48,7 @@ data VaultT f = Vault
 type Vault = VaultT Data.Functor.Identity.Identity
 
 instance Entity Vault where
-  type PrimKey Vault = Int
   tableMeta  = genericTableMeta @VaultT "vaults"
-  rowDecoder = genericRowDecoder
-  rowEncode  = genericRowEncode
-  primKey    = vaultId
   rlsPolicies =
     [ policy "org_isolation_soft"
         `using` (\v -> v ^. #vaultOrg .== currentSettingOr "app.current_org" "__none__") ]
