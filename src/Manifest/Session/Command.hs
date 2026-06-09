@@ -15,7 +15,7 @@ import Manifest.Core.Codec (ToField(..))
 import Manifest.Core.Meta (TableMeta(..), pkColumn, cmName)
 import Manifest.Core.Query (Assign(..), Cond(..))
 import Manifest.Core.Sql (renderConds, renderUpdate)
-import Manifest.Entity (Entity(..), Key(..))
+import Manifest.Entity (Entity(..), Key(..), PrimKey)
 import Manifest.Session (Db, execDb)
 
 -- | Blind single-row UPDATE by primary key. Sets the given assignments with no

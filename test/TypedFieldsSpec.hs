@@ -1,10 +1,12 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 
@@ -43,12 +45,7 @@ data AccountT f = Account
   } deriving Generic
 type Account = AccountT Identity
 
-instance Entity Account where
-  type PrimKey Account = AccountId
-  tableMeta  = genericTableMeta @AccountT "accounts"
-  rowDecoder = genericRowDecoder
-  rowEncode  = genericRowEncode
-  primKey    = accountId
+deriving via (Table "accounts" AccountT) instance Entity Account
 
 data NoteT f = Note
   { noteId      :: Col f (PrimaryKey (Serial NoteId))
@@ -57,12 +54,7 @@ data NoteT f = Note
   } deriving Generic
 type Note = NoteT Identity
 
-instance Entity Note where
-  type PrimKey Note = NoteId
-  tableMeta  = genericTableMeta @NoteT "notes"
-  rowDecoder = genericRowDecoder
-  rowEncode  = genericRowEncode
-  primKey    = noteId
+deriving via (Table "notes" NoteT) instance Entity Note
 
 accountsDDL, notesDDL :: BC.ByteString
 accountsDDL = "CREATE TABLE accounts ( account_id BIGSERIAL PRIMARY KEY, account_name TEXT NOT NULL )"

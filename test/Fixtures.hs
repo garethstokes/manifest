@@ -1,6 +1,8 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 
@@ -40,7 +42,8 @@ import Manifest.Core.Table (Col, PrimaryKey, Serial)
 import Manifest.Core.Meta (genericTableMeta)
 import Manifest.Core.Cascade (OnDelete(..))
 import Manifest.Core.Relation (Card(..), HasRelation(..), belongsTo, belongsToMaybe, cascade, hasMany, hasOpt)
-import Manifest.Entity (Entity (..), genericRowDecoder, genericRowEncode)
+import Manifest.Derive ()
+import Manifest.Entity (Entity (..), Table (..))
 import Manifest.Postgres (Pool, closePool, execText, newPool, withConnection)
 
 -- | The example higher-kinded table. One declaration; @UserT Identity@ is the
@@ -55,11 +58,7 @@ data UserT f = User
 type User = UserT Identity
 
 instance Entity User where
-  type PrimKey User = Int
   tableMeta  = genericTableMeta @UserT "users"
-  rowDecoder = genericRowDecoder
-  rowEncode  = genericRowEncode
-  primKey    = userId
   cascadeRules =
     [ cascade (Proxy @Post)    (Proxy @"postAuthor")  Cascade
     , cascade (Proxy @Profile) (Proxy @"profileUser") SetNull
@@ -74,12 +73,7 @@ data PostT f = Post
   } deriving Generic
 type Post = PostT Identity
 
-instance Entity Post where
-  type PrimKey Post = Int
-  tableMeta  = genericTableMeta @PostT "posts"
-  rowDecoder = genericRowDecoder
-  rowEncode  = genericRowEncode
-  primKey    = postId
+deriving via (Table "posts" PostT) instance Entity Post
 
 -- Profiles: optional one-per-user via profile_user = users.user_id. The FK is
 -- nullable (so SetNull can null it; the row then survives, parentless).
@@ -90,12 +84,7 @@ data ProfileT f = Profile
   } deriving Generic
 type Profile = ProfileT Identity
 
-instance Entity Profile where
-  type PrimKey Profile = Int
-  tableMeta  = genericTableMeta @ProfileT "profiles"
-  rowDecoder = genericRowDecoder
-  rowEncode  = genericRowEncode
-  primKey    = profileId
+deriving via (Table "profiles" ProfileT) instance Entity Profile
 
 -- Tags: each belongs to a user via tag_user = users.user_id (Restrict on delete).
 data TagT f = Tag
@@ -105,12 +94,7 @@ data TagT f = Tag
   } deriving Generic
 type Tag = TagT Identity
 
-instance Entity Tag where
-  type PrimKey Tag = Int
-  tableMeta  = genericTableMeta @TagT "tags"
-  rowDecoder = genericRowDecoder
-  rowEncode  = genericRowEncode
-  primKey    = tagId
+deriving via (Table "tags" TagT) instance Entity Tag
 
 -- Employees: a self-referential table. employee_manager is a nullable self-FK
 -- referencing employee_id, so an employee can have a manager (forward FK) and
@@ -122,12 +106,7 @@ data EmployeeT f = Employee
   } deriving Generic
 type Employee = EmployeeT Identity
 
-instance Entity Employee where
-  type PrimKey Employee = Int
-  tableMeta  = genericTableMeta @EmployeeT "employees"
-  rowDecoder = genericRowDecoder
-  rowEncode  = genericRowEncode
-  primKey    = employeeId
+deriving via (Table "employees" EmployeeT) instance Entity Employee
 
 -- forward FK (nullable belongs-to self): the manager is the employee whose PK =
 -- self.employee_manager, or Nothing when the self-FK is NULL (top of the chain).
@@ -150,12 +129,7 @@ data CommentT f = Comment
   } deriving Generic
 type Comment = CommentT Identity
 
-instance Entity Comment where
-  type PrimKey Comment = Int
-  tableMeta  = genericTableMeta @CommentT "comments"
-  rowDecoder = genericRowDecoder
-  rowEncode  = genericRowEncode
-  primKey    = commentId
+deriving via (Table "comments" CommentT) instance Entity Comment
 
 instance HasRelation Post "comments" where
   type Target      Post "comments" = [Comment]
