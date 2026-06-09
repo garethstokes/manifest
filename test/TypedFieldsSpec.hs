@@ -12,10 +12,14 @@ module TypedFieldsSpec (tests) where
 
 import qualified Data.ByteString.Char8 as BC
 import Data.Functor.Identity (Identity)
+import Data.List (isInfixOf)
 import Data.Text (Text)
 import GHC.Generics (Generic)
 import Manifest
 import Manifest.Postgres (execText, withConnection)
+import System.Directory (getTemporaryDirectory, removeFile)
+import System.IO (hClose, openTempFile)
+import System.Process (readProcessWithExitCode)
 import Fixtures (withEmptyDb)
 import Harness
 
@@ -64,6 +68,23 @@ accountsDDL, notesDDL :: BC.ByteString
 accountsDDL = "CREATE TABLE accounts ( account_id BIGSERIAL PRIMARY KEY, account_name TEXT NOT NULL )"
 notesDDL    = "CREATE TABLE notes ( note_id BIGSERIAL PRIMARY KEY, note_account BIGINT NOT NULL, note_body TEXT NOT NULL )"
 
+wrongIdSource :: String
+wrongIdSource = unlines
+  [ "{-# LANGUAGE DataKinds #-}"
+  , "{-# LANGUAGE DerivingStrategies #-}"
+  , "{-# LANGUAGE GeneralizedNewtypeDeriving #-}"
+  , "module WrongId where"
+  , "import Data.Functor.Identity (Identity)"
+  , "import Manifest (Col)"
+  , "import Manifest.Core.Codec (ToField, FromField)"
+  , "import Manifest.Core.Table (ScalarMeta)"
+  , "newtype AccountId = AccountId Int deriving newtype (ToField, FromField, ScalarMeta)"
+  , "newtype NoteId    = NoteId Int    deriving newtype (ToField, FromField, ScalarMeta)"
+  , "data R f = R { rAcc :: Col f AccountId }"
+  , "boom :: R Identity"
+  , "boom = R { rAcc = NoteId 1 }"
+  ]
+
 tests :: [Test]
 tests = group "TypedFields"
   [ test "a newtype column round-trips through the codec" $
@@ -81,4 +102,21 @@ tests = group "TypedFields"
           pure (fmap accountName got, map noteBody (ns :: [Note]))
         assertEqual "account decoded by its typed Key" (Just "Ada") name
         assertEqual "note found via the typed FK" ["hi"] body
+  , test "a typed FK rejects the wrong id newtype at compile time" $ do
+      tmp <- getTemporaryDirectory
+      (path, h) <- openTempFile tmp "WrongId.hs"
+      hClose h
+      writeFile path wrongIdSource
+      (_code, _out, err) <-
+        readProcessWithExitCode "ghc"
+          [ "-fno-code", "-fforce-recomp"
+          , "-package-db", ".zinc/pkgdb"
+          , "-i.zinc/lib"
+          , path
+          ]
+          ""
+      removeFile path
+      let msg = unwords (words err)
+      assertBool ("mentions AccountId; output was:\n" <> err) ("AccountId" `isInfixOf` msg)
+      assertBool ("mentions NoteId; output was:\n" <> err)    ("NoteId"    `isInfixOf` msg)
   ]
