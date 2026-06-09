@@ -23,10 +23,13 @@ instance Entity Secret where
         `using` (\s -> s ^. #secretOrg .== currentSetting "app.current_org") ]
 ```
 
-`using` sets the `USING` predicate (SELECT/UPDATE/DELETE visibility); `withCheck`
-sets `WITH CHECK` (INSERT/UPDATE); `forCommand` restricts a policy to one command.
-Predicates use `lit` / `currentSetting`, not `val` (a policy is DDL, not a
-parameterised query).
+`using` sets the `USING` predicate. It governs which rows are visible to
+`SELECT`/`UPDATE`/`DELETE`, and Postgres also applies it as the write check for
+`INSERT`/`UPDATE` unless a separate `withCheck` is given, so a `using`-only policy
+already rejects writing a row the predicate would not admit (for example inserting
+another org's row). Use `withCheck` only when the write predicate must differ from
+the read predicate; `forCommand` restricts a policy to one command. Predicates use
+`lit` / `currentSetting`, not `val` (a policy is DDL, not a parameterised query).
 
 ## Migrating policies
 
@@ -47,6 +50,12 @@ withTransaction $ withRlsContext [("app.current_org", currentOrg)] $ do
   rows <- selectWhere []          -- only the current org's rows, enforced by Postgres
   ...
 ```
+
+Always wrap access to a policied table in `withRlsContext`. The predicate above
+reads `current_setting('app.current_org')`, which errors (`unrecognized
+configuration parameter`) when the GUC has not been set, so a query that forgets the
+context fails rather than returning the wrong rows. That is fail-closed, but it does
+mean a missing context is a query error, not an empty result.
 
 ## Notes and limits
 
