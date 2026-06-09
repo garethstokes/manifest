@@ -23,9 +23,9 @@ import Manifest.Session (Db, execDb)
 import Harness
 
 data SecretT f = Secret
-  { secretId   :: Col f (PrimaryKey (Serial Int))
-  , secretOrg  :: Col f Text
-  , secretBody :: Col f Text
+  { secretId   :: Field f (Pk Int)
+  , secretOrg  :: Field f Text
+  , secretBody :: Field f Text
   } deriving GHC.Generics.Generic
 type Secret = SecretT Data.Functor.Identity.Identity
 
@@ -41,9 +41,9 @@ secretsDDL = "CREATE TABLE secrets ( secret_id BIGSERIAL PRIMARY KEY, secret_org
 -- context GUC is unset it falls back to a sentinel that matches no row, so a
 -- context-less query returns nothing instead of erroring.
 data VaultT f = Vault
-  { vaultId   :: Col f (PrimaryKey (Serial Int))
-  , vaultOrg  :: Col f Text
-  , vaultBody :: Col f Text
+  { vaultId   :: Field f (Pk Int)
+  , vaultOrg  :: Field f Text
+  , vaultBody :: Field f Text
   } deriving GHC.Generics.Generic
 type Vault = VaultT Data.Functor.Identity.Identity
 

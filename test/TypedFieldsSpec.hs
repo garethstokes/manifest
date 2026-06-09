@@ -40,17 +40,17 @@ newtype NoteId = NoteId Int
   deriving newtype DbType
 
 data AccountT f = Account
-  { accountId   :: Col f (PrimaryKey (Serial AccountId))   -- runtime AccountId; column BIGSERIAL
-  , accountName :: Col f Text
+  { accountId   :: Field f (Pk AccountId)   -- runtime AccountId; column BIGSERIAL
+  , accountName :: Field f Text
   } deriving Generic
 type Account = AccountT Identity
 
 deriving via (Table "accounts" AccountT) instance Entity Account
 
 data NoteT f = Note
-  { noteId      :: Col f (PrimaryKey (Serial NoteId))
-  , noteAccount :: Col f AccountId          -- typed FK to accounts.account_id
-  , noteBody    :: Col f Text
+  { noteId      :: Field f (Pk NoteId)
+  , noteAccount :: Field f AccountId          -- typed FK to accounts.account_id
+  , noteBody    :: Field f Text
   } deriving Generic
 type Note = NoteT Identity
 
@@ -59,8 +59,8 @@ deriving via (Table "notes" NoteT) instance Entity Note
 -- A brand-new plain entity declared ONLY via the deriving-via one-liner (no
 -- explicit Entity instance body): proves a fresh entity round-trips end to end.
 data GadgetT f = Gadget
-  { gadgetId   :: Col f (PrimaryKey (Serial Int))
-  , gadgetName :: Col f Text
+  { gadgetId   :: Field f (Pk Int)
+  , gadgetName :: Field f Text
   } deriving Generic
 type Gadget = GadgetT Identity
 
@@ -78,11 +78,11 @@ wrongIdSource = unlines
   , "{-# LANGUAGE GeneralizedNewtypeDeriving #-}"
   , "module WrongId where"
   , "import Data.Functor.Identity (Identity)"
-  , "import Manifest (Col)"
+  , "import Manifest (Field)"
   , "import Manifest.Core.Codec (DbType)"
   , "newtype AccountId = AccountId Int deriving newtype DbType"
   , "newtype NoteId    = NoteId Int    deriving newtype DbType"
-  , "data R f = R { rAcc :: Col f AccountId }"
+  , "data R f = R { rAcc :: Field f AccountId }"
   , "boom :: R Identity"
   , "boom = R { rAcc = NoteId 1 }"
   ]

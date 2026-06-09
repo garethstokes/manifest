@@ -38,7 +38,7 @@ import Data.Text (Text)
 import GHC.Generics (Generic)
 import System.Directory (removeDirectoryRecursive)
 import System.Process (callProcess, readProcess)
-import Manifest.Core.Table (Col, PrimaryKey, Serial)
+import Manifest.Core.Table (Field, Pk, Nullable)
 import Manifest.Core.Meta (genericTableMeta)
 import Manifest.Core.Cascade (OnDelete(..))
 import Manifest.Core.Relation (Card(..), HasRelation(..), belongsTo, belongsToMaybe, cascade, hasMany, hasOpt)
@@ -49,9 +49,9 @@ import Manifest.Postgres (Pool, closePool, execText, newPool, withConnection)
 -- | The example higher-kinded table. One declaration; @UserT Identity@ is the
 -- clean runtime value, @UserT Exposed@ carries markers for the deriver.
 data UserT f = User
-  { userId    :: Col f (PrimaryKey (Serial Int))
-  , userName  :: Col f Text
-  , userEmail :: Col f (Maybe Text)
+  { userId    :: Field f (Pk Int)
+  , userName  :: Field f Text
+  , userEmail :: Field f (Nullable Text)
   } deriving Generic
 
 -- | The runtime row type: @userId :: Int, userName :: Text, userEmail :: Maybe Text@.
@@ -67,9 +67,9 @@ instance Entity User where
 
 -- Posts: each belongs to a user via post_author = users.user_id (to-many from User).
 data PostT f = Post
-  { postId     :: Col f (PrimaryKey (Serial Int))
-  , postAuthor :: Col f Int
-  , postTitle  :: Col f Text
+  { postId     :: Field f (Pk Int)
+  , postAuthor :: Field f Int
+  , postTitle  :: Field f Text
   } deriving Generic
 type Post = PostT Identity
 
@@ -78,9 +78,9 @@ deriving via (Table "posts" PostT) instance Entity Post
 -- Profiles: optional one-per-user via profile_user = users.user_id. The FK is
 -- nullable (so SetNull can null it; the row then survives, parentless).
 data ProfileT f = Profile
-  { profileId   :: Col f (PrimaryKey (Serial Int))
-  , profileUser :: Col f (Maybe Int)
-  , profileBio  :: Col f Text
+  { profileId   :: Field f (Pk Int)
+  , profileUser :: Field f (Nullable Int)
+  , profileBio  :: Field f Text
   } deriving Generic
 type Profile = ProfileT Identity
 
@@ -88,9 +88,9 @@ deriving via (Table "profiles" ProfileT) instance Entity Profile
 
 -- Tags: each belongs to a user via tag_user = users.user_id (Restrict on delete).
 data TagT f = Tag
-  { tagId    :: Col f (PrimaryKey (Serial Int))
-  , tagUser  :: Col f Int
-  , tagLabel :: Col f Text
+  { tagId    :: Field f (Pk Int)
+  , tagUser  :: Field f Int
+  , tagLabel :: Field f Text
   } deriving Generic
 type Tag = TagT Identity
 
@@ -100,9 +100,9 @@ deriving via (Table "tags" TagT) instance Entity Tag
 -- referencing employee_id, so an employee can have a manager (forward FK) and
 -- reports (reverse FK), both targeting the same table — needs aliased joins.
 data EmployeeT f = Employee
-  { employeeId      :: Col f (PrimaryKey (Serial Int))
-  , employeeManager :: Col f (Maybe Int)   -- nullable self-FK → employee_id
-  , employeeName    :: Col f Text
+  { employeeId      :: Field f (Pk Int)
+  , employeeManager :: Field f (Nullable Int)   -- nullable self-FK → employee_id
+  , employeeName    :: Field f Text
   } deriving Generic
 type Employee = EmployeeT Identity
 
@@ -123,9 +123,9 @@ instance HasRelation Employee "reports" where
 
 -- Comments: each belongs to a post via comment_post = posts.post_id (to-many from Post).
 data CommentT f = Comment
-  { commentId   :: Col f (PrimaryKey (Serial Int))
-  , commentPost :: Col f Int          -- FK → post_id
-  , commentBody :: Col f Text
+  { commentId   :: Field f (Pk Int)
+  , commentPost :: Field f Int          -- FK → post_id
+  , commentBody :: Field f Text
   } deriving Generic
 type Comment = CommentT Identity
 

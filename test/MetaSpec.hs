@@ -5,7 +5,7 @@ module MetaSpec (tests) where
 
 import Data.Functor.Identity (Identity)
 import Data.Text (Text)
-import Manifest.Core.Table (Base, Col, FieldMeta (..), PrimaryKey, Serial)
+import Manifest.Core.Table (Base, Field, FieldMeta (..), PrimaryKey, Serial)
 import Manifest.Core.Meta (ColumnMeta (..), SqlType (..), TableMeta (..), genericTableMeta)
 import Fixtures (User, UserT (..))
 import Manifest.Entity (Entity (..), pkParam)
@@ -13,12 +13,12 @@ import Manifest.Core.Codec (decodeRow)
 import qualified Data.ByteString.Char8 as BC
 import Harness
 
--- Compile-time proofs that Base/Col reduce as intended (won't compile otherwise).
+-- Compile-time proofs that Base/Field reduce as intended (won't compile otherwise).
 _pkReduces :: Base (PrimaryKey (Serial Int)) -> Int
 _pkReduces = id
 
-_colIdentityReduces :: Col Identity (PrimaryKey (Serial Int)) -> Int
-_colIdentityReduces = id
+_fieldIdentityReduces :: Field Identity (PrimaryKey (Serial Int)) -> Int
+_fieldIdentityReduces = id
 
 _textPassesThrough :: Base Text -> Text
 _textPassesThrough = id

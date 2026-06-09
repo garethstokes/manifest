@@ -102,7 +102,9 @@ module Manifest
     -- * Table metadata
   , Serial
   , PrimaryKey
-  , Col
+  , Field
+  , Pk
+  , Nullable
   , genericTableMeta
   , genericRowDecoder
   , genericRowEncode
@@ -198,7 +200,9 @@ import Manifest.Core.Codec
 import Manifest.Core.Table
   ( Serial
   , PrimaryKey
-  , Col
+  , Field
+  , Pk
+  , Nullable
   )
 import Manifest.Core.Meta
   ( genericTableMeta

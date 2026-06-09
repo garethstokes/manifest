@@ -18,10 +18,10 @@ is one `deriving via` line, shown below ([Entities](entities.md)).
 ## 1. Define a table
 
 A table is a record parameterized by a functor `f`, with each field wrapped in
-`Col f`. In `Identity` context `Col` erases its markers, so `type User = UserT
+`Field f`. In `Identity` context `Field` erases its markers, so `type User = UserT
 Identity` is the plain value `userId :: Int, userName :: Text, userEmail :: Maybe
-Text`. The `PrimaryKey (Serial Int)` marker is visible to the metadata deriver but
-invisible in the value.
+Text`. The `Pk Int` marker (the alias for `PrimaryKey (Serial Int)`) is visible to
+the metadata deriver but invisible in the value.
 
 ```haskell
 {-# LANGUAGE DataKinds #-}
@@ -37,9 +37,9 @@ import GHC.Generics (Generic)
 import Manifest
 
 data UserT f = User
-  { userId    :: Col f (PrimaryKey (Serial Int))   -- primary key: the first field
-  , userName  :: Col f Text
-  , userEmail :: Col f (Maybe Text)
+  { userId    :: Field f (Pk Int)   -- primary key: the first field
+  , userName  :: Field f Text
+  , userEmail :: Field f (Nullable Text)
   } deriving Generic
 
 -- The clean runtime value: userId :: Int, userName :: Text, userEmail :: Maybe Text
