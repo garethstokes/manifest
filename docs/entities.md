@@ -13,7 +13,7 @@ entity the `Entity` instance is one `deriving via` line (see
 [Deriving the Entity instance](#deriving-the-entity-instance) below); entities with
 cascade rules or row-level-security policies write a short explicit instance.
 
-This page covers the shape of that record (Higher-Kinded Data), how `Col` erases
+This page covers the shape of that record (Higher-Kinded Data), how `Field` erases
 its markers in `Identity` context, what the `Entity` instance derives, and how
 keys and `#label` column references work. Every example matches the real
 `test/Fixtures.hs`, the same surface the [tutorials](tutorials/index.md) compile
@@ -36,7 +36,7 @@ references.
 ### The HKD record
 
 A table is a record parameterized by a functor `f`, with each field wrapped in
-`Col f`:
+`Field f`:
 
 ```haskell
 {-# LANGUAGE DataKinds #-}
@@ -50,29 +50,30 @@ import GHC.Generics (Generic)
 import Manifest
 
 data UserT f = User
-  { userId    :: Col f (PrimaryKey (Serial Int))
-  , userName  :: Col f Text
-  , userEmail :: Col f (Maybe Text)
+  { userId    :: Field f (Pk Int)
+  , userName  :: Field f Text
+  , userEmail :: Field f (Nullable Text)
   } deriving Generic
 ```
 
 The `T` suffix (`UserT`) is the convention for the higher-kinded constructor; the
-data constructor is `User`. The field types carry markers (`PrimaryKey`, `Serial`)
-that the deriver reads but the runtime value never sees.
+data constructor is `User`. `Pk a` is the alias for `PrimaryKey (Serial a)` and
+`Nullable a` is the alias for `Maybe a`; these markers are what the deriver reads
+but the runtime value never sees.
 
-### `Col f` and `Identity` erasure
+### `Field f` and `Identity` erasure
 
-`Col` is a closed type family with two instantiations today:
+`Field` is a closed type family with two instantiations today:
 
 ```hs
-type family Col (f :: Type -> Type) (a :: Type) :: Type where
-  Col Identity a = Base a       -- the runtime value: markers stripped
-  Col Exposed  a = Exposed a    -- the metadata view: markers preserved
+type family Field (f :: Type -> Type) (a :: Type) :: Type where
+  Field Identity a = Base a       -- the runtime value: markers stripped
+  Field Exposed  a = Exposed a    -- the metadata view: markers preserved
 ```
 
-In `Identity` context, `Col` strips the markers down to the base type:
-`Col Identity (PrimaryKey (Serial Int))` reduces to `Int`,
-`Col Identity (Maybe Text)` to `Maybe Text`. So the runtime value is a type synonym
+In `Identity` context, `Field` strips the markers down to the base type:
+`Field Identity (Pk Int)` reduces to `Int`,
+`Field Identity (Nullable Text)` to `Maybe Text`. So the runtime value is a type synonym
 applying `Identity`:
 
 ```haskell
@@ -82,15 +83,15 @@ type User = UserT Identity
 
 That `User` is an ordinary record. You build it, read its fields, and edit it with
 normal record-update syntax, `u { userName = "Bob" }`. The
-`PrimaryKey (Serial Int)` marker is invisible here; it exists only so the metadata
+`Pk Int` marker is invisible here; it exists only so the metadata
 deriver (which reads the record as `UserT Exposed`) can see that `userId` is the
 primary key and an auto-incrementing serial.
 
-> The query-expression context (`Col` in a third, expression functor) is part of
+> The query-expression context (`Field` in a third, expression functor) is part of
 > the design but tied to Core joins/aggregates, which are **Planned**, not built.
-> Today `Col` has exactly the two cases above. The typed column references you use
+> Today `Field` has exactly the two cases above. The typed column references you use
 > in `where_`/`update` come from the field labels (`#userName`), described below,
-> not from a query-functor instantiation of `Col`.
+> not from a query-functor instantiation of `Field`.
 
 ### The `Entity` instance
 
@@ -177,39 +178,47 @@ the context expects.
 
 ## Typed fields
 
-Fields do not have to be bare base types. Any newtype over a supported base type
-(`Int`, `Text`, `Bool`) is a first-class column once it derives the three column
-capabilities, in one clause:
+Fields do not have to be bare base types. A column type is anything with a
+`DbType` instance, which carries the codec (how a value maps to and from the
+wire) and the SQL type. A newtype over a supported base type (`Int`, `Text`,
+`Bool`) gets one for free by deriving it:
 
 ```haskell
 newtype Email = Email Text
-  deriving newtype (ToField, FromField, ScalarMeta)
+  deriving newtype DbType
 ```
 
-`ToField`/`FromField` are the codec; `ScalarMeta` supplies the SQL type and
-nullability. The same pattern gives type-safe identifiers. Use the newtype as the
+For a domain type that is not a newtype, write the instance by mapping it through
+an existing `DbType`:
+
+```haskell
+instance DbType Money where
+  dbType = dimap (\(Money n) -> n) Money (dbType @Int)
+```
+
+The same newtype pattern gives type-safe identifiers. Use the newtype as the
 primary key and as foreign keys that point at it:
 
 ```haskell
-newtype UserId = UserId Int deriving newtype (ToField, FromField, ScalarMeta)
-newtype PostId = PostId Int deriving newtype (ToField, FromField, ScalarMeta)
+newtype UserId = UserId Int deriving newtype DbType
+newtype PostId = PostId Int deriving newtype DbType
 
 data UserT f = User
-  { userId   :: Col f (PrimaryKey (Serial UserId))   -- runtime UserId; column BIGSERIAL
-  , userName :: Col f Text
+  { userId   :: Field f (Pk UserId)   -- runtime UserId; column BIGSERIAL
+  , userName :: Field f Text
   } deriving Generic
 
 data PostT f = Post
-  { postId     :: Col f (PrimaryKey (Serial PostId))
-  , postAuthor :: Col f UserId                        -- typed foreign key to users.user_id
-  , postTitle  :: Col f Text
+  { postId     :: Field f (Pk PostId)
+  , postAuthor :: Field f UserId                        -- typed foreign key to users.user_id
+  , postTitle  :: Field f Text
   } deriving Generic
 
 deriving via (Table "users" UserT) instance Entity User
 ```
 
-The primary-key type is read from the first field's marker, so `PrimaryKey (Serial
-UserId)` makes the key a `UserId` with no extra declaration. Now `userId ::
+The primary-key type is read from the first field's marker, so `Pk UserId`
+makes the key a `UserId` with no extra declaration. Now `userId ::
 UserId`, `Key User` wraps a `UserId`, and `postAuthor` is a `UserId`
 you cannot fill from a `PostId`. The id flows through `add` (the `RETURNING` serial is
 decoded back into `UserId`), `get (Key (UserId 1))`, and the query builder
@@ -225,8 +234,8 @@ schema and migrations are unchanged.
 
 The full recipe for adding a table:
 
-1. **Declare the HKD record** `data XT f = X { … :: Col f … } deriving Generic`,
-   marking the primary key with `PrimaryKey` (and `Serial` if it auto-increments).
+1. **Declare the HKD record** `data XT f = X { … :: Field f … } deriving Generic`,
+   marking the primary key with `Pk` (which is `PrimaryKey (Serial …)`, so it auto-increments).
    The primary key must be the first field.
 2. **Add the runtime synonym** `type X = XT Identity`.
 3. **Derive the `Entity` instance** with one `deriving via` line,
@@ -251,9 +260,9 @@ style: `User`, `Post`, `Profile`, `Tag`, `Employee` (self-referential), and
 
 ```haskell
 data PostT f = Post
-  { postId     :: Col f (PrimaryKey (Serial Int))
-  , postAuthor :: Col f Int
-  , postTitle  :: Col f Text
+  { postId     :: Field f (Pk Int)
+  , postAuthor :: Field f Int
+  , postTitle  :: Field f Text
   } deriving Generic
 
 type Post = PostT Identity
@@ -261,7 +270,7 @@ type Post = PostT Identity
 deriving via (Table "posts" PostT) instance Entity Post
 ```
 
-A non-serial, nullable column (`Profile`'s `profileUser :: Col f (Maybe Int)`) is
+A non-serial, nullable column (`Profile`'s `profileUser :: Field f (Nullable Int)`) is
 declared the same way; the `Maybe` makes the column nullable, which the deriver
 reads off the base type. From here, the worked examples are the
 [tutorials](tutorials/index.md): each is a literate Haskell page the suite compiles
@@ -286,9 +295,9 @@ string:
 {-# LANGUAGE TypeFamilies #-}
 
 data PostT f = Post
-  { postId     :: Col f (PrimaryKey (Serial Int))   -- primary key: the first field
-  , postAuthor :: Col f Int
-  , postTitle  :: Col f Text
+  { postId     :: Field f (Pk Int)   -- primary key: the first field
+  , postAuthor :: Field f Int
+  , postTitle  :: Field f Text
   } deriving Generic
 type Post = PostT Identity
 

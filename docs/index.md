@@ -42,7 +42,7 @@ insert/update/delete flush, relationship loading (two strategies, `selectin` and
 
 - [Getting started](getting-started.md): define a table, open a session, do a
   first round-trip (`add` / `get` / `save`).
-- [Entities](entities.md): HKD records, `Col`/`Identity` erasure, `deriving
+- [Entities](entities.md): HKD records, `Field`/`Identity` erasure, `deriving
   Generic` and deriving the `Entity` instance, keys, and `#label` column
   references.
 - [Unit of Work](unit-of-work.md): the `Db` monad, the identity map, the four

@@ -40,7 +40,7 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BC
 import Data.Text (Text)
 import qualified Data.Text.Encoding as TE
-import Manifest.Core.Codec (FromField, RowDecoder (..), SqlParam, ToField (..), decodeRow, field)
+import Manifest.Core.Codec (DbType, RowDecoder (..), SqlParam, decodeCol, decodeRow, encode)
 import Manifest.Core.Meta (ColumnMeta (..), TableMeta (..))
 import Manifest.Core.Query (Column (..))
 import Manifest.Core.Sql (bcIntercalate)
@@ -94,8 +94,8 @@ instance Projectable Handle where
 instance Projectable OptHandle where
   OptHandle al ^. Column c = Expr (al <> "." <> c) []
 
-val :: ToField t => t -> Expr t
-val x = Expr "?" [toField x]
+val :: DbType t => t -> Expr t
+val x = Expr "?" [encode x]
 
 -- | A self-reference to the policy's own table: projects BARE column names
 -- (no alias), because an RLS policy is already scoped to its table.
@@ -303,10 +303,10 @@ instance Entity e => Selectable (OptHandle e) where
     bcIntercalate ", " [ al <> "." <> cmName c | c <- tmColumns (tableMeta @e) ]
   selDec _ = optDecoder @e
 
-instance FromField t => Selectable (Expr t) where
+instance DbType t => Selectable (Expr t) where
   type Result (Expr t) = t
   selCols (Expr t _) = t
-  selDec  _ = field
+  selDec  _ = decodeCol
   selParams (Expr _ p) = p
 
 instance (Selectable a, Selectable b) => Selectable (a, b) where

@@ -10,15 +10,16 @@ module Manifest.Core.Table
   , PrimaryKey
   , Exposed
   , Base
-  , Col
-  , ScalarMeta(..)
+  , Field
+  , Pk
+  , Nullable
   , FieldMeta(..)
   ) where
 
 import Data.Functor.Identity (Identity)
 import Data.Kind (Type)
-import Data.Text (Text)
 import Manifest.Core.SqlType (SqlType(..))
+import Manifest.Core.Codec (DbType(..), Codec(..))
 
 -- | Marker: an auto-incrementing serial column whose runtime type is @a@.
 data Serial a
@@ -26,8 +27,8 @@ data Serial a
 -- | Marker: a primary-key column wrapping inner marker/type @a@.
 data PrimaryKey a
 
--- | The metadata context. @Col Exposed a = Exposed a@ keeps the marker visible
--- to the deriver, where @Col Identity a@ erases it.
+-- | The metadata context. @Field Exposed a = Exposed a@ keeps the marker visible
+-- to the deriver, where @Field Identity a@ erases it.
 data Exposed a
 
 -- | Strip markers down to the runtime base type.
@@ -38,21 +39,15 @@ type family Base (a :: Type) :: Type where
 
 -- | Per-context column type. SP1 instantiates only Identity (runtime value) and
 -- Exposed (metadata). The query-expression context is added in SP4.
-type family Col (f :: Type -> Type) (a :: Type) :: Type where
-  Col Identity a = Base a
-  Col Exposed  a = Exposed a
+type family Field (f :: Type -> Type) (a :: Type) :: Type where
+  Field Identity a = Base a
+  Field Exposed  a = Exposed a
 
--- | Map a base scalar to its column type + nullability.
-class ScalarMeta a where
-  scalarType     :: SqlType
-  scalarNullable :: Bool
+-- | Marker alias: a primary-key column over an auto-incrementing serial @a@.
+type Pk a       = PrimaryKey (Serial a)
 
-instance ScalarMeta Int  where { scalarType = SqlBigInt; scalarNullable = False }
-instance ScalarMeta Text where { scalarType = SqlText;   scalarNullable = False }
-instance ScalarMeta Bool where { scalarType = SqlBool;   scalarNullable = False }
-instance ScalarMeta a => ScalarMeta (Maybe a) where
-  scalarType     = scalarType @a
-  scalarNullable = True
+-- | Marker alias for a nullable column.
+type Nullable a = Maybe a
 
 -- | Reflect a field's PK/serial flags + SQL type/nullability from its marker
 -- structure (used by the deriver).
@@ -74,8 +69,8 @@ instance FieldMeta (Serial a) where
   fieldSqlType  = SqlBigSerial
   fieldNullable = False
 
-instance {-# OVERLAPPABLE #-} ScalarMeta a => FieldMeta a where
+instance {-# OVERLAPPABLE #-} DbType a => FieldMeta a where
   fieldIsPK     = False
   fieldIsSerial = False
-  fieldSqlType  = scalarType @a
-  fieldNullable = scalarNullable @a
+  fieldSqlType  = cSqlType  (dbType @a)
+  fieldNullable = cNullable (dbType @a)

@@ -29,28 +29,44 @@ import Harness
 -- column-type classes are re-exported from the umbrella.
 newtype Email = Email Text
   deriving stock (Eq, Show)
-  deriving newtype (ToField, FromField, ScalarMeta)
+  deriving newtype DbType
 
 newtype AccountId = AccountId Int
   deriving stock (Eq, Show)
-  deriving newtype (ToField, FromField, ScalarMeta)
+  deriving newtype DbType
 
 newtype NoteId = NoteId Int
   deriving stock (Eq, Show)
-  deriving newtype (ToField, FromField, ScalarMeta)
+  deriving newtype DbType
+
+-- A domain column whose codec is built EXPLICITLY with `dimap` (not GND):
+-- proves the dimap path round-trips end to end through the DB.
+newtype Cents = Cents Int
+  deriving stock (Eq, Show)
+
+instance DbType Cents where
+  dbType = dimap (\(Cents n) -> n) Cents (dbType @Int)
+
+data ItemT f = Item
+  { itemId    :: Field f (Pk Int)
+  , itemPrice :: Field f Cents
+  } deriving Generic
+type Item = ItemT Identity
+
+deriving via (Table "items" ItemT) instance Entity Item
 
 data AccountT f = Account
-  { accountId   :: Col f (PrimaryKey (Serial AccountId))   -- runtime AccountId; column BIGSERIAL
-  , accountName :: Col f Text
+  { accountId   :: Field f (Pk AccountId)   -- runtime AccountId; column BIGSERIAL
+  , accountName :: Field f Text
   } deriving Generic
 type Account = AccountT Identity
 
 deriving via (Table "accounts" AccountT) instance Entity Account
 
 data NoteT f = Note
-  { noteId      :: Col f (PrimaryKey (Serial NoteId))
-  , noteAccount :: Col f AccountId          -- typed FK to accounts.account_id
-  , noteBody    :: Col f Text
+  { noteId      :: Field f (Pk NoteId)
+  , noteAccount :: Field f AccountId          -- typed FK to accounts.account_id
+  , noteBody    :: Field f Text
   } deriving Generic
 type Note = NoteT Identity
 
@@ -59,17 +75,18 @@ deriving via (Table "notes" NoteT) instance Entity Note
 -- A brand-new plain entity declared ONLY via the deriving-via one-liner (no
 -- explicit Entity instance body): proves a fresh entity round-trips end to end.
 data GadgetT f = Gadget
-  { gadgetId   :: Col f (PrimaryKey (Serial Int))
-  , gadgetName :: Col f Text
+  { gadgetId   :: Field f (Pk Int)
+  , gadgetName :: Field f Text
   } deriving Generic
 type Gadget = GadgetT Identity
 
 deriving via (Table "gadgets" GadgetT) instance Entity Gadget
 
-accountsDDL, notesDDL, gadgetsDDL :: BC.ByteString
+accountsDDL, notesDDL, gadgetsDDL, itemsDDL :: BC.ByteString
 accountsDDL = "CREATE TABLE accounts ( account_id BIGSERIAL PRIMARY KEY, account_name TEXT NOT NULL )"
 notesDDL    = "CREATE TABLE notes ( note_id BIGSERIAL PRIMARY KEY, note_account BIGINT NOT NULL, note_body TEXT NOT NULL )"
 gadgetsDDL  = "CREATE TABLE gadgets ( gadget_id BIGSERIAL PRIMARY KEY, gadget_name TEXT NOT NULL )"
+itemsDDL    = "CREATE TABLE items ( item_id BIGSERIAL PRIMARY KEY, item_price BIGINT NOT NULL )"
 
 wrongIdSource :: String
 wrongIdSource = unlines
@@ -78,12 +95,11 @@ wrongIdSource = unlines
   , "{-# LANGUAGE GeneralizedNewtypeDeriving #-}"
   , "module WrongId where"
   , "import Data.Functor.Identity (Identity)"
-  , "import Manifest (Col)"
-  , "import Manifest.Core.Codec (ToField, FromField)"
-  , "import Manifest.Core.Table (ScalarMeta)"
-  , "newtype AccountId = AccountId Int deriving newtype (ToField, FromField, ScalarMeta)"
-  , "newtype NoteId    = NoteId Int    deriving newtype (ToField, FromField, ScalarMeta)"
-  , "data R f = R { rAcc :: Col f AccountId }"
+  , "import Manifest (Field)"
+  , "import Manifest.Core.Codec (DbType)"
+  , "newtype AccountId = AccountId Int deriving newtype DbType"
+  , "newtype NoteId    = NoteId Int    deriving newtype DbType"
+  , "data R f = R { rAcc :: Field f AccountId }"
   , "boom :: R Identity"
   , "boom = R { rAcc = NoteId 1 }"
   ]
@@ -93,7 +109,7 @@ tests = group "TypedFields"
   [ test "a newtype column round-trips through the codec" $
       assertEqual "Email round-trip"
         (Right (Email "ada@x.io"))
-        (fromField (toField (Email "ada@x.io")))
+        (cDecode dbType (encode (Email "ada@x.io")))
   , test "typed PK and typed FK round-trip end to end" $
       withEmptyDb $ \pool -> do
         withConnection pool (\c -> execText c accountsDDL [] >> execText c notesDDL [])
@@ -115,6 +131,16 @@ tests = group "TypedFields"
           pure (fmap gadgetName got, map gadgetName (gs :: [Gadget]))
         assertEqual "gadget decoded by its derived Key" (Just "wrench") byKey
         assertEqual "gadget found via selectWhere on a column" ["wrench"] byCol
+  , test "a dimap-defined domain column round-trips through the DB" $
+      withEmptyDb $ \pool -> do
+        withConnection pool (\c -> execText c itemsDDL [])
+        out <- withSession pool $ do
+          i  <- add (Item { itemId = 0, itemPrice = Cents 1999 } :: Item)
+          mi <- get @Item (Key (itemId i))
+          is <- selectWhere [ #itemPrice ==. Cents 1999 ]
+          pure (fmap itemPrice mi, map itemPrice (is :: [Item]))
+        assertEqual "got price by key" (Just (Cents 1999)) (fst out)
+        assertEqual "found by typed col" [Cents 1999] (snd out)
   , test "a typed FK rejects the wrong id newtype at compile time" $ do
       tmp <- getTemporaryDirectory
       (path, h) <- openTempFile tmp "WrongId.hs"
