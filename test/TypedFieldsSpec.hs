@@ -56,9 +56,20 @@ type Note = NoteT Identity
 
 deriving via (Table "notes" NoteT) instance Entity Note
 
-accountsDDL, notesDDL :: BC.ByteString
+-- A brand-new plain entity declared ONLY via the deriving-via one-liner (no
+-- explicit Entity instance body): proves a fresh entity round-trips end to end.
+data GadgetT f = Gadget
+  { gadgetId   :: Col f (PrimaryKey (Serial Int))
+  , gadgetName :: Col f Text
+  } deriving Generic
+type Gadget = GadgetT Identity
+
+deriving via (Table "gadgets" GadgetT) instance Entity Gadget
+
+accountsDDL, notesDDL, gadgetsDDL :: BC.ByteString
 accountsDDL = "CREATE TABLE accounts ( account_id BIGSERIAL PRIMARY KEY, account_name TEXT NOT NULL )"
 notesDDL    = "CREATE TABLE notes ( note_id BIGSERIAL PRIMARY KEY, note_account BIGINT NOT NULL, note_body TEXT NOT NULL )"
+gadgetsDDL  = "CREATE TABLE gadgets ( gadget_id BIGSERIAL PRIMARY KEY, gadget_name TEXT NOT NULL )"
 
 wrongIdSource :: String
 wrongIdSource = unlines
@@ -94,6 +105,16 @@ tests = group "TypedFields"
           pure (fmap accountName got, map noteBody (ns :: [Note]))
         assertEqual "account decoded by its typed Key" (Just "Ada") name
         assertEqual "note found via the typed FK" ["hi"] body
+  , test "a deriving-via plain entity round-trips end to end" $
+      withEmptyDb $ \pool -> do
+        withConnection pool (\c -> execText c gadgetsDDL [])
+        (byKey, byCol) <- withSession pool $ do
+          g   <- add (Gadget { gadgetId = 0, gadgetName = "wrench" } :: Gadget)
+          got <- get @Gadget (Key (gadgetId g))
+          gs  <- selectWhere [ #gadgetName ==. ("wrench" :: Text) ]
+          pure (fmap gadgetName got, map gadgetName (gs :: [Gadget]))
+        assertEqual "gadget decoded by its derived Key" (Just "wrench") byKey
+        assertEqual "gadget found via selectWhere on a column" ["wrench"] byCol
   , test "a typed FK rejects the wrong id newtype at compile time" $ do
       tmp <- getTemporaryDirectory
       (path, h) <- openTempFile tmp "WrongId.hs"
