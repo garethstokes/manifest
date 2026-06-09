@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
@@ -62,4 +63,21 @@ tests = group "Json"
         assertEqual "initial prefs round-trip" (Just (Prefs "dark" ["x"]))        initialPrefs
         assertEqual "updated prefs via save"   (Just (Prefs "light" ["y", "z"])) updatedPrefs
         assertEqual "updated nullable note"    (Just (Just (Prefs "dark" ["x"]))) updatedNote
+  , test "jsonb operators @> and ->> filter on the document" $
+      withEmptyDb $ \pool -> do
+        withConnection pool (\c -> execText c settingsDDL [])
+        (byText, byContain) <- withSession pool $ do
+          _ <- add (Setting { settingId = 0, settingPrefs = Json (Prefs "dark"  ["x"]), settingNote = Nothing } :: Setting)
+          _ <- add (Setting { settingId = 0, settingPrefs = Json (Prefs "light" ["y"]), settingNote = Nothing } :: Setting)
+          bt <- runQuery $ do
+            s <- from @Setting
+            where_ ((s ^. #settingPrefs :: Expr (Json Prefs)) .->> "theme" .== val ("dark" :: Text))
+            pure s
+          bc <- runQuery $ do
+            s <- from @Setting
+            where_ (s ^. #settingPrefs .@> Json (Prefs "light" ["y"]))
+            pure s
+          pure (map (unJson . settingPrefs) (bt :: [Setting]), map (unJson . settingPrefs) (bc :: [Setting]))
+        assertEqual "->> theme=dark finds the dark row"  [Prefs "dark"  ["x"]] byText
+        assertEqual "@> finds the light row"             [Prefs "light" ["y"]] byContain
   ]
