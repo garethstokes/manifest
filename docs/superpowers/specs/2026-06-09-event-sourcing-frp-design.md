@@ -1,11 +1,14 @@
-# Manifest — Event Sourcing / FRP — Design Note
+# Manifest — Event Sourcing / FRP — Design Proposal
 
-**Status:** Brainstorm complete; design approved area-by-area. Deliverable of issue
-`manifest-z8h` (a design note, not an implementation). · **Date:** 2026-06-09
+**Status:** **PROPOSAL — NOT APPROVED.** Captures the direction explored while
+brainstorming issue `manifest-z8h`. It is a starting point for discussion, not an
+accepted design, and nothing here is committed to be built. · **Date:** 2026-06-09
 
 **Scope of this document:** weigh the options for adding event sourcing and reactive
-("FRP") capabilities to Manifest, fix the design decisions, and recommend a
-decomposition with a first MVP slice. Implementation is a separate, later decision.
+("FRP") capabilities to Manifest, propose a set of design choices, and recommend a
+decomposition with a first MVP slice. Approval and implementation are separate, later
+decisions. The "(Brainstorm leaning: …)" notes below record which option was favoured
+during the exploration; they are proposals, not ratified decisions.
 
 ---
 
@@ -19,7 +22,7 @@ world** — not a rewrite into full event sourcing.
 A type *opts in* to event sourcing (the way entities opt into `rlsPolicies` /
 `cascadeRules`). For an opted-in aggregate, an append-only event log is the source
 of truth and current state is a fold of its events; every other type keeps the
-normal state-based UoW. (Brainstorm decision: **B**, opt-in hybrid, over a thin
+normal state-based UoW. (Brainstorm leaning: **B**, opt-in hybrid, over a thin
 event-log/outbox adjunct (A) or full event sourcing everywhere (C).)
 
 This fits Manifest's "thin, owned Core you opt into" philosophy and keeps each piece
@@ -52,7 +55,7 @@ Events are heterogeneous-per-stream and evolve over time, so payloads are stored
 (`{"tag":"OrderPlaced","contents":{…}}`), so a stream's payloads decode straight back
 to `Event a`.
 
-(Brainstorm decision: **A**, jsonb via aeson, over reusing Manifest's text codec into
+(Brainstorm leaning: **A**, jsonb via aeson, over reusing Manifest's text codec into
 one opaque column (B) or one table per event type (C). Accepted consequence: aeson
 becomes Manifest's first dependency beyond boot libs + `postgresql-libpq`; this also
 needs a `SqlJsonb` column type + a JSON codec, which is independently useful and is
@@ -104,7 +107,7 @@ append :: forall a. Aggregate a => StreamId -> Version -> [Event a] -> Db ()
 A conflict (someone else advanced the stream) surfaces as a typed error the caller
 can retry.
 
-(Brainstorm decision: **A**, minimal store, over a baked-in decider (B).)
+(Brainstorm leaning: **A**, minimal store, over a baked-in decider (B).)
 
 **Deferred:** command/decider helpers; snapshots (periodic state snapshots to bound
 replay cost); multi-aggregate transactions beyond the single-stream `append`.
@@ -129,7 +132,7 @@ data Projection a = Projection
   }
 ```
 
-(Brainstorm decision: **A now**, per-aggregate typed projections; **B later**, global
+(Brainstorm leaning: **A now**, per-aggregate typed projections; **B later**, global
 projections with typed per-event-type handlers for read models that span multiple
 aggregates.)
 
@@ -156,7 +159,7 @@ The application drives `catchUp` (a loop, a timer, or — once §3 lands — a
 notification). Eventual consistency for read models; the *defining ES capability,
 rebuild-from-log,* falls straight out of `projReset` + replay.
 
-(Brainstorm decision: **B (async catch-up) now, growing into C (also inline
+(Brainstorm leaning: **B (async catch-up) now, growing into C (also inline
 strong-consistency)** later. Inline mode — apply a projection in the same transaction
 as `append` for read-after-write consistency — is a deferred follow-up that reuses the
 same `projApply` handler.)
@@ -196,7 +199,7 @@ It is the *building block* for reactive reads (re-read a query/projection when i
 inputs change) without committing to any FRP semantics; the application composes the
 reactivity.
 
-(Brainstorm decision: **A**, change-feed primitive, over a full FRP layer (B) or
+(Brainstorm leaning: **A**, change-feed primitive, over a full FRP layer (B) or
 deferring reactive entirely (C).)
 
 ### 3.3 Why not a full FRP layer now
@@ -250,7 +253,7 @@ optimistic concurrency, rebuild its current state by folding, and view its histo
 The `jsonb` codec rides along (the event store needs it) and is reusable on its own.
 Projections (3) and the reactive feed (4) layer on cleanly as follow-on specs.
 
-(Brainstorm decision: **A**, decompose with the first cut at the ES core, over folding
+(Brainstorm leaning: **A**, decompose with the first cut at the ES core, over folding
 projections into the first slice (B) or one mega-spec (C). Each sub-project gets its
 own spec → plan → implementation cycle when/if pursued.)
 
