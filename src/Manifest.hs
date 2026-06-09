@@ -99,6 +99,9 @@ module Manifest
   , refine
   , nullable
   , SqlType (..)
+    -- * JSONB columns
+  , Json (..)
+  , HasCodec (..)
     -- * Table metadata
   , Serial
   , PrimaryKey
@@ -196,6 +199,12 @@ import Manifest.Core.Codec
   , rmap
   , refine
   , nullable
+  )
+import Manifest.Json
+  ( Json (..)
+  )
+import Autodocodec
+  ( HasCodec (..)
   )
 import Manifest.Core.Table
   ( Serial
