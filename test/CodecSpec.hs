@@ -87,4 +87,8 @@ tests = group "Codec"
   , test "SqlJsonb DDL and live spellings" $ do
       assertEqual "ddl"  "JSONB" (sqlTypeDDL SqlJsonb)
       assertEqual "live" "jsonb" (sqlTypeLive SqlJsonb)
+  , test "Double column round-trips and is double precision" $ do
+      assertEqual "sqltype" SqlDouble (cSqlType (dbType @Double))
+      assertEqual "encode"  (Just (BC.pack "1.5")) (encode (1.5 :: Double))
+      assertEqual "decode"  (Right (1.5 :: Double)) (cDecode (dbType @Double) (Just (BC.pack "1.5")))
   ]

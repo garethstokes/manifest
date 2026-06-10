@@ -96,6 +96,13 @@ instance DbType Int where
                           Nothing -> Left (DecodeError "expected Int, got NULL"))
                  SqlBigInt False
 
+instance DbType Double where
+  dbType = Codec (Just . BC.pack . show)
+                 (\p -> case p of
+                          Just bs -> maybe (Left (DecodeError ("expected Double, got " <> show (BC.unpack bs)))) Right (readMaybe (BC.unpack bs))
+                          Nothing -> Left (DecodeError "expected Double, got NULL"))
+                 SqlDouble False
+
 instance DbType Text where
   dbType = Codec (Just . TE.encodeUtf8)
                  (\p -> case p of Just bs -> Right (TE.decodeUtf8 bs); Nothing -> Left (DecodeError "expected Text, got NULL"))
