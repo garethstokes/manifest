@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -38,13 +39,16 @@ instance Entity DatasetVersion where
   tableMeta    = genericTableMeta @DatasetVersionT "dataset_versions"
   cascadeRules = [ cascade (Proxy @Example) (Proxy @"datasetVersion") Cascade
                  , cascade (Proxy @Run)     (Proxy @"datasetVersion") Restrict ]
+  indexes      = [ unique [#dataset, #version] ]
 
 instance HasRelation DatasetVersion "examples" where
   type Target      DatasetVersion "examples" = [Example]
   type Cardinality DatasetVersion "examples" = 'Many
   relSpec = hasMany (Proxy @"datasetVersion")
 
-deriving via (Table "examples" ExampleT) instance Entity Example
+instance Entity Example where
+  tableMeta = genericTableMeta @ExampleT "examples"
+  indexes   = [ gin #input, btree #datasetVersion ]
 
 -- Targets ---------------------------------------------------------------------
 
@@ -57,9 +61,10 @@ instance HasRelation T.Target "versions" where
   type Cardinality T.Target "versions" = 'Many
   relSpec = hasMany (Proxy @"target")
 
-instance Entity TargetVersion where
+instance Entity T.TargetVersion where
   tableMeta    = genericTableMeta @TargetVersionT "target_versions"
   cascadeRules = [ cascade (Proxy @Run) (Proxy @"targetVersion") Restrict ]
+  indexes      = [ unique [#target, #version] ]
 
 -- Graders ---------------------------------------------------------------------
 
@@ -75,6 +80,7 @@ instance HasRelation Grader "versions" where
 instance Entity GraderVersion where
   tableMeta    = genericTableMeta @GraderVersionT "grader_versions"
   cascadeRules = [ cascade (Proxy @Score) (Proxy @"graderVersion") Restrict ]
+  indexes      = [ unique [#grader, #version] ]
 
 -- Run / Output / Score --------------------------------------------------------
 
@@ -82,6 +88,7 @@ instance Entity Run where
   tableMeta    = genericTableMeta @RunT "runs"
   cascadeRules = [ cascade (Proxy @Output)    (Proxy @"run") Cascade
                  , cascade (Proxy @RunMetric) (Proxy @"run") Cascade ]
+  indexes      = [ gin #meta, btree #datasetVersion, btree #targetVersion ]
 
 instance HasRelation Run "outputs" where
   type Target      Run "outputs" = [Output]
@@ -101,6 +108,7 @@ instance HasRelation Run "datasetVersion" where
 instance Entity Output where
   tableMeta    = genericTableMeta @OutputT "outputs"
   cascadeRules = [ cascade (Proxy @Score) (Proxy @"output") Cascade ]
+  indexes      = [ gin #response, btree #run ]
 
 instance HasRelation Output "scores" where
   type Target      Output "scores" = [Score]
@@ -117,7 +125,9 @@ instance HasRelation Output "example" where
   type Cardinality Output "example" = 'One
   relSpec = belongsTo (Proxy @"example")
 
-deriving via (Table "scores" ScoreT) instance Entity Score
+instance Entity Score where
+  tableMeta = genericTableMeta @ScoreT "scores"
+  indexes   = [ btree #output ]
 
 instance HasRelation Score "grader" where
   type Target      Score "grader" = GraderVersion
