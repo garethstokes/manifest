@@ -60,6 +60,30 @@ newtype RunMetricId      = RunMetricId Int      deriving newtype DbType
 The flexible JSON payload type is `Aeson Value` (raw jsonb via the `Aeson a` column; `Value`
 already has `ToJSON`/`FromJSON`).
 
+### Record style
+
+The eval package enables **`DuplicateRecordFields`** + **`NoFieldSelectors`** +
+**`OverloadedRecordDot`** (plus `OverloadedLabels`, which the query builder needs), so
+records use **bare, unprefixed field names** and are read with `.field`:
+
+```haskell
+data ExampleT f = Example { id :: Field f (Pk ExampleId), datasetVersion :: Field f DatasetVersionId, input :: Field f (Aeson Value) }
+-- ex.input  ::  Aeson Value      ex.id  ::  ExampleId      map (.input) examples
+```
+
+This was verified to cooperate with Manifest's machinery: two records sharing a bare `id`
+field derive `Entity` via `Table`, `genericTableMeta` reads the bare names as columns
+(`camelToSnake "datasetVersion" = "dataset_version"`), `OverloadedRecordDot` sees through
+the `Field f a` family at `Identity`, and the `?.` typed projection resolves the bare-named
+labels (`run ?. #status`). **`OverloadedRecordUpdate` is NOT used** (experimental); record
+updates use plain `r { field = x }`, disambiguated by the record's type. The entity
+declarations in §2 follow this bare-name style.
+
+One caveat: bare field names become bare column names, and Manifest renders DDL unquoted,
+so avoid SQL **reserved** words as field names (`order`, `user`, `default`, `table`, ...).
+The names chosen in §2 (`id`, `name`, `version`, `key`, `value`, `text`, `count`, ...) are
+non-reserved keywords, which Postgres accepts as unquoted column names.
+
 ---
 
 ## 2. Entities
@@ -71,29 +95,29 @@ RLS-readiness (§6). `createdAt :: UTCTime` everywhere needs the timestamp exten
 
 ```haskell
 data DatasetT f = Dataset
-  { datasetId   :: Field f (Pk DatasetId)
-  , datasetOrg  :: Field f OrgId
-  , datasetName :: Field f Text
-  , datasetSlug :: Field f Text
-  , datasetCreatedAt :: Field f UTCTime
+  { id        :: Field f (Pk DatasetId)
+  , org       :: Field f OrgId
+  , name      :: Field f Text
+  , slug      :: Field f Text
+  , createdAt :: Field f UTCTime
   } deriving Generic                                       -- table "datasets"
 
 data DatasetVersionT f = DatasetVersion
-  { dvId          :: Field f (Pk DatasetVersionId)
-  , dvDataset     :: Field f DatasetId                     -- FK -> datasets
-  , dvVersion     :: Field f Int                           -- UNIQUE (dvDataset, dvVersion)
-  , dvNote        :: Field f (Maybe Text)
-  , dvFinalizedAt :: Field f (Maybe UTCTime)
-  , dvCreatedAt   :: Field f UTCTime
+  { id          :: Field f (Pk DatasetVersionId)
+  , dataset     :: Field f DatasetId                       -- FK -> datasets
+  , version     :: Field f Int                             -- UNIQUE (dataset, version)
+  , note        :: Field f (Maybe Text)
+  , finalizedAt :: Field f (Maybe UTCTime)
+  , createdAt   :: Field f UTCTime
   } deriving Generic                                       -- table "dataset_versions"
 
 data ExampleT f = Example
-  { exId       :: Field f (Pk ExampleId)
-  , exVersion  :: Field f DatasetVersionId                 -- FK -> dataset_versions
-  , exKey      :: Field f Text                             -- stable id within the dataset (cross-version compare)
-  , exInput    :: Field f (Aeson Value)                    -- jsonb
-  , exExpected :: Field f (Maybe (Aeson Value))            -- jsonb (reference answer / rubric target)
-  , exMeta     :: Field f (Maybe (Aeson Value))            -- jsonb
+  { id             :: Field f (Pk ExampleId)
+  , datasetVersion :: Field f DatasetVersionId             -- FK -> dataset_versions
+  , key            :: Field f Text                         -- stable id within the dataset (cross-version compare)
+  , input          :: Field f (Aeson Value)                -- jsonb
+  , expected       :: Field f (Maybe (Aeson Value))        -- jsonb (reference answer / rubric target)
+  , meta           :: Field f (Maybe (Aeson Value))        -- jsonb
   } deriving Generic                                       -- table "examples"
 ```
 
@@ -101,20 +125,20 @@ data ExampleT f = Example
 
 ```haskell
 data TargetT f = Target
-  { targetId   :: Field f (Pk TargetId)
-  , targetOrg  :: Field f OrgId
-  , targetName :: Field f Text
-  , targetCreatedAt :: Field f UTCTime
+  { id        :: Field f (Pk TargetId)
+  , org       :: Field f OrgId
+  , name      :: Field f Text
+  , createdAt :: Field f UTCTime
   } deriving Generic                                       -- table "targets"
 
 data TargetVersionT f = TargetVersion
-  { tvId        :: Field f (Pk TargetVersionId)
-  , tvTarget    :: Field f TargetId
-  , tvVersion   :: Field f Int                             -- UNIQUE (tvTarget, tvVersion)
-  , tvModel     :: Field f Text                            -- provider model id
-  , tvPrompt    :: Field f Text                            -- prompt template
-  , tvParams    :: Field f (Aeson Value)                   -- jsonb: temperature, max_tokens, ...
-  , tvCreatedAt :: Field f UTCTime
+  { id        :: Field f (Pk TargetVersionId)
+  , target    :: Field f TargetId
+  , version   :: Field f Int                               -- UNIQUE (target, version)
+  , model     :: Field f Text                              -- provider model id
+  , prompt    :: Field f Text                              -- prompt template
+  , params    :: Field f (Aeson Value)                     -- jsonb: temperature, max_tokens, ...
+  , createdAt :: Field f UTCTime
   } deriving Generic                                       -- table "target_versions"
 ```
 
@@ -122,19 +146,19 @@ data TargetVersionT f = TargetVersion
 
 ```haskell
 data GraderT f = Grader
-  { graderId   :: Field f (Pk GraderId)
-  , graderOrg  :: Field f OrgId
-  , graderName :: Field f Text
-  , graderKind :: Field f Text                             -- exact | judge | rubric | ...
-  , graderCreatedAt :: Field f UTCTime
+  { id        :: Field f (Pk GraderId)
+  , org       :: Field f OrgId
+  , name      :: Field f Text
+  , kind      :: Field f Text                              -- exact | judge | rubric | ...
+  , createdAt :: Field f UTCTime
   } deriving Generic                                       -- table "graders"
 
 data GraderVersionT f = GraderVersion
-  { gvId        :: Field f (Pk GraderVersionId)
-  , gvGrader    :: Field f GraderId
-  , gvVersion   :: Field f Int                             -- UNIQUE (gvGrader, gvVersion)
-  , gvConfig    :: Field f (Aeson Value)                   -- jsonb: judge prompt / rubric / match rule
-  , gvCreatedAt :: Field f UTCTime
+  { id        :: Field f (Pk GraderVersionId)
+  , grader    :: Field f GraderId
+  , version   :: Field f Int                               -- UNIQUE (grader, version)
+  , config    :: Field f (Aeson Value)                     -- jsonb: judge prompt / rubric / match rule
+  , createdAt :: Field f UTCTime
   } deriving Generic                                       -- table "grader_versions"
 ```
 
@@ -142,52 +166,52 @@ data GraderVersionT f = GraderVersion
 
 ```haskell
 data RunT f = Run
-  { runId             :: Field f (Pk RunId)
-  , runOrg            :: Field f OrgId
-  , runDatasetVersion :: Field f DatasetVersionId          -- FK -> dataset_versions (frozen inputs)
-  , runTargetVersion  :: Field f TargetVersionId           -- FK -> target_versions (frozen system)
-  , runStatus         :: Field f Text                      -- queued | running | succeeded | failed
-  , runStartedAt      :: Field f (Maybe UTCTime)
-  , runFinishedAt     :: Field f (Maybe UTCTime)
-  , runMeta           :: Field f (Maybe (Aeson Value))     -- jsonb
-  , runCreatedAt      :: Field f UTCTime
+  { id             :: Field f (Pk RunId)
+  , org            :: Field f OrgId
+  , datasetVersion :: Field f DatasetVersionId             -- FK -> dataset_versions (frozen inputs)
+  , targetVersion  :: Field f TargetVersionId              -- FK -> target_versions (frozen system)
+  , status         :: Field f Text                         -- queued | running | succeeded | failed
+  , startedAt      :: Field f (Maybe UTCTime)
+  , finishedAt     :: Field f (Maybe UTCTime)
+  , meta           :: Field f (Maybe (Aeson Value))        -- jsonb
+  , createdAt      :: Field f UTCTime
   } deriving Generic                                       -- table "runs"
 
 data OutputT f = Output
-  { outId        :: Field f (Pk OutputId)
-  , outRun       :: Field f RunId                          -- FK -> runs
-  , outExample   :: Field f ExampleId                      -- FK -> examples
-  , outResponse  :: Field f (Maybe (Aeson Value))          -- jsonb: raw provider response (null if errored)
-  , outText      :: Field f (Maybe Text)                   -- extracted completion text
-  , outError     :: Field f (Maybe Text)
-  , outLatencyMs :: Field f (Maybe Int)
-  , outTokens    :: Field f (Maybe (Aeson Value))          -- jsonb: usage
+  { id        :: Field f (Pk OutputId)
+  , run       :: Field f RunId                             -- FK -> runs
+  , example   :: Field f ExampleId                         -- FK -> examples
+  , response  :: Field f (Maybe (Aeson Value))             -- jsonb: raw provider response (null if errored)
+  , text      :: Field f (Maybe Text)                      -- extracted completion text
+  , error     :: Field f (Maybe Text)
+  , latencyMs :: Field f (Maybe Int)
+  , tokens    :: Field f (Maybe (Aeson Value))             -- jsonb: usage
   } deriving Generic                                       -- table "outputs"
 
 data ScoreT f = Score
-  { scoreId           :: Field f (Pk ScoreId)
-  , scoreOutput       :: Field f OutputId                  -- FK -> outputs
-  , scoreGraderVersion :: Field f GraderVersionId          -- FK -> grader_versions
-  , scoreValue        :: Field f Double                    -- needs DbType Double (§5)
-  , scorePassed       :: Field f (Maybe Bool)
-  , scoreDetail       :: Field f (Maybe (Aeson Value))     -- jsonb: judge reasoning
-  , scoreCreatedAt    :: Field f UTCTime
+  { id            :: Field f (Pk ScoreId)
+  , output        :: Field f OutputId                      -- FK -> outputs
+  , graderVersion :: Field f GraderVersionId               -- FK -> grader_versions
+  , value         :: Field f Double                        -- needs DbType Double (§5)
+  , passed        :: Field f (Maybe Bool)
+  , detail        :: Field f (Maybe (Aeson Value))         -- jsonb: judge reasoning
+  , createdAt     :: Field f UTCTime
   } deriving Generic                                       -- table "scores"
 
 data RunMetricT f = RunMetric
-  { rmId           :: Field f (Pk RunMetricId)
-  , rmRun          :: Field f RunId                        -- FK -> runs
-  , rmGraderVersion :: Field f GraderVersionId             -- FK -> grader_versions
-  , rmMean         :: Field f Double
-  , rmPassRate     :: Field f (Maybe Double)
-  , rmCount        :: Field f Int
-  , rmComputedAt   :: Field f UTCTime
+  { id            :: Field f (Pk RunMetricId)
+  , run           :: Field f RunId                         -- FK -> runs
+  , graderVersion :: Field f GraderVersionId               -- FK -> grader_versions
+  , mean          :: Field f Double
+  , passRate      :: Field f (Maybe Double)
+  , count         :: Field f Int
+  , computedAt    :: Field f UTCTime
   } deriving Generic                                       -- table "run_metrics"
 ```
 
 `RunMetric` is the cached rollup the dashboard reads; the query builder computes the same
 numbers live (§4). `Score` is per `(output, graderVersion)`, so re-scoring outputs with a
-new grader version is just inserting more `Score` rows. `exKey` lets the dashboard line up
+new grader version is just inserting more `Score` rows. `key` lets the dashboard line up
 the same logical example across two runs on different dataset versions.
 
 ---
@@ -197,8 +221,8 @@ the same logical example across two runs on different dataset versions.
 `HasRelation` instances wire the graph; `cascadeRules` mix `Cascade` (ownership trees) with
 `Restrict` (protect frozen versions a run depends on):
 
-- `Dataset →hasMany→ DatasetVersion` (`dvDataset`); on delete **Cascade**.
-- `DatasetVersion →hasMany→ Example` (`exVersion`); on delete **Cascade**.
+- `Dataset →hasMany→ DatasetVersion` (`dataset`); on delete **Cascade**.
+- `DatasetVersion →hasMany→ Example` (`datasetVersion`); on delete **Cascade**.
   `DatasetVersion`'s delete is **Restrict**ed if any `Run` references it (reproducibility).
 - `Target →hasMany→ TargetVersion`; Cascade. `TargetVersion` delete **Restrict**ed by `Run`.
 - `Grader →hasMany→ GraderVersion`; Cascade. `GraderVersion` delete **Restrict**ed by `Score`.
@@ -215,11 +239,12 @@ the same logical example across two runs on different dataset versions.
 
 **Indexes** (the declarative `indexes` feature):
 
-- `gin` on the queried jsonb: `Example.exInput`, `Output.outResponse`, `Run.runMeta`
+- `gin` on the queried jsonb: `Example.input`, `Output.response`, `Run.meta`
   (filter by document contents with `@>` / `->>`).
-- `btree` on the hot foreign keys joins traverse: `outRun`, `scoreOutput`, `exVersion`,
-  `runDatasetVersion`, `runTargetVersion`.
-- **Unique** on `(dvDataset, dvVersion)`, `(tvTarget, tvVersion)`, `(gvGrader, gvVersion)`
+- `btree` on the hot foreign keys joins traverse: `Output.run`, `Score.output`,
+  `Example.datasetVersion`, `Run.datasetVersion`, `Run.targetVersion`.
+- **Unique** on `DatasetVersion (dataset, version)`, `TargetVersion (target, version)`,
+  `GraderVersion (grader, version)`
   — see §5 (needs a unique-index extension or a manual migration).
 
 **Aggregates** are the query builder. `RunMetric`'s numbers are `avg_`/`countRows` over
@@ -228,13 +253,13 @@ the same logical example across two runs on different dataset versions.
 ```haskell
 runQuery $ do
   o <- from @Output
-  s <- innerJoin @Score (\s -> s ?. #scoreOutput .== o ?. #outId)
-  where_ (o ?. #outRun .== val theRunId)
-  groupBy (s ?. #scoreGraderVersion)
-  pure (s ?. #scoreGraderVersion, avg_ (s ?. #scoreValue), countRows)
+  s <- innerJoin @Score (\s -> s ?. #output .== o ?. #id)
+  where_ (o ?. #run .== val theRunId)
+  groupBy (s ?. #graderVersion)
+  pure (s ?. #graderVersion, avg_ (s ?. #value), countRows)
 ```
 
-"Compare run A vs B" joins two runs' outputs on `exKey` (same logical example) and diffs
+"Compare run A vs B" joins two runs' outputs on `key` (same logical example) and diffs
 their scores. jsonb operators (`->>`, `@>`, `#>>`) filter on input/response contents, with
 `?.` keeping those projections annotation-free.
 
@@ -249,12 +274,12 @@ in scope here (or as tiny pre-tasks in the plan):
    no timestamp support yet: add `SqlTimestamptz` to `SqlType` (`TIMESTAMPTZ` / `timestamp
    with time zone`) and a `DbType UTCTime` instance (encode/decode the Postgres ISO-8601
    text via the `time` library, already a dependency).
-2. **`DbType Double`.** `scoreValue`/`rmMean` are `Double`; add a `DbType Double` instance
+2. **`DbType Double`.** `Score.value`/`RunMetric.mean` are `Double`; add a `DbType Double` instance
    (`SqlDouble` → `double precision`). Small, parallel to the existing `Int` instance.
 3. **Unique indexes (decided: extend the feature).** The `(dataset, version)` uniqueness
    wants a `UNIQUE` index; the just-built `indexes` feature does `gin`/`btree` (single
    column) only. We extend it with a multi-column **`unique`** builder
-   (`unique [#dvDataset, #dvVersion]` → `CREATE UNIQUE INDEX … (dv_dataset, dv_version)`),
+   (`unique [#dataset, #version]` → `CREATE UNIQUE INDEX … (dataset, version)`),
    mirroring `gin`/`btree` and reconciled the same create-only way. This is reusable beyond
    the eval schema and is a Manifest library change (§5 lands in `manifest` first).
 
@@ -266,7 +291,7 @@ The four root tables carry `org :: OrgId`, populated with one team's id; **no `r
 are declared**. Child rows (versions, examples, outputs, scores, metrics) are reachable only
 through an org-scoped root, so the roots are the isolation boundary. Going multi-tenant later
 is additive: attach an `org_isolation` policy
-(`policy "org_isolation" \`using\` (\r -> r ^. #runOrg .== currentSetting "app.current_org")`)
+(`policy "org_isolation" \`using\` (\r -> r ^. #org .== currentSetting "app.current_org")`)
 to each root and wrap sessions in `withRlsContext` — no schema reshape, no backfill.
 
 ---
@@ -296,7 +321,7 @@ the migration to create the schema. Tests (ephemeral Postgres, the existing harn
 - the cascade behaviour: deleting a `Run` removes its outputs and scores; deleting a
   `DatasetVersion` that a `Run` references is **rejected** (Restrict);
 - the aggregate query returns the correct mean/count per grader version against seeded
-  scores, and a two-run comparison lines examples up by `exKey`;
+  scores, and a two-run comparison lines examples up by `key`;
 - round-trips of the timestamp (`UTCTime`) and `Double` columns and the `Aeson Value` jsonb
   payloads.
 
