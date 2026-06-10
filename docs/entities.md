@@ -253,25 +253,45 @@ data UserT f = User
 
 The whole value encodes to and from `jsonb` on every read and write.
 
+For a type that already has `aeson` `ToJSON`/`FromJSON` instances, wrap it in `Aeson`
+instead of `Json` (same `jsonb` storage, the value's aeson instances do the encoding):
+
+```haskell
+data Doc = Doc { docTitle :: Text, docCount :: Int } deriving Generic
+instance ToJSON Doc
+instance FromJSON Doc
+-- column:  docBody :: Field f (Aeson Doc)
+```
+
 Query into the document with `.@>` (containment), `.->` (field as jsonb, chainable),
-and `.->>` (field as text). A projected column is annotated with its `Json` type so the
-operator knows the document shape:
+`.->>` (field as text), and the path forms `.#>` / `.#>>` (a `[Text]` path, returning
+jsonb / text). Project the column with `?.`, which recovers its type from the record, so
+no annotation is needed (a wrong field name is a compile error):
 
 ```haskell
 runQuery $ do
   u <- from @User
-  where_ ((u ^. #userPrefs :: Expr (Json Prefs)) .->> "theme" .== val ("dark" :: Text))
+  where_ (u ?. #userPrefs .->> "theme" .== val ("dark" :: Text))
   pure u
 ```
 
-Containment checks whether the stored document contains a given value:
+Containment checks whether the stored document contains a given value, and a path reaches
+into nested objects:
 
 ```haskell
 runQuery $ do
   u <- from @User
-  where_ ((u ^. #userPrefs :: Expr (Json Prefs)) .@> Json (Prefs "dark" []))
+  where_ (u ?. #userPrefs .@> Json (Prefs "dark" []))
+  pure u
+
+runQuery $ do
+  u <- from @User
+  where_ (u ?. #userPrefs .#>> ["window", "title"] .== val ("Home" :: Text))
   pure u
 ```
+
+`?.` is the typed projection. The older `(u ^. #userPrefs :: Expr (Json Prefs))` form
+still works, but `?.` reads the type from the entity, so the annotation is unnecessary.
 
 ## Adding a table
 

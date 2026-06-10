@@ -83,6 +83,23 @@ It first ensures the `schema_migrations` tracking table exists, then:
 `migrateUp` is idempotent: a second run against an already-migrated database computes
 an empty additive plan and is a no-op.
 
+## Declarative indexes
+
+An entity declares indexes with the `indexes` method, reconciled by `migrate` /
+`migrateUp` the same way columns and RLS policies are. A `gin` index on a `jsonb` column
+lets `@>` containment queries use an index; `btree` is the ordinary index:
+
+```haskell
+instance Entity User where
+  tableMeta = genericTableMeta @UserT "users"
+  indexes   = [ gin #userPrefs, btree #userName ]
+```
+
+Each index is named `<table>_<column>_<method>_idx`. The engine creates a declared index
+if it is not already present (it is created in the same run that creates the table). Index
+reconciliation is create-only: it never drops an index, because the primary-key index and
+any hand-made indexes are not managed here. Removing an index is a manual operation.
+
 ## The CLI: `manifest-migrate`
 
 The `manifest-migrate` executable (`app/Main.hs`) wires a `[ManagedTable]` schema to

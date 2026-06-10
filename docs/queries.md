@@ -28,6 +28,11 @@ error. Expression comparisons are `.==`, `./=`, `.>`, `.<`, combined with `.&&`;
 `val` lifts a literal. `runQuery` results are plain values, not identity-map entries;
 use `get` or `selectWhere` for managed rows.
 
+`u ?. #userName` is the typed projection: like `^.`, but it recovers the column's
+Haskell type from the entity's record, so the expression's type is known without an
+annotation (useful for the JSONB operators) and a misspelled field name is a compile
+error. `^.` stays polymorphic in the column type; `?.` pins it.
+
 ## Joins
 
 `innerJoin @Post` takes a function from the new handle to the join condition;
