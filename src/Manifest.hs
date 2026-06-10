@@ -156,8 +156,10 @@ module Manifest
   , IndexMethod (..)
   , Index
   , IndexDef (..)
+  , SomeColumn (..)
   , gin
   , btree
+  , unique
     -- * Errors
   , DbError(..)
   , DbException(..)
@@ -185,9 +187,9 @@ import Manifest.Core.Rls
 import Manifest.Rls
   ( policy, using, withCheck, forCommand )
 import Manifest.Core.Index
-  ( IndexMethod (..), Index, IndexDef (..) )
+  ( IndexMethod (..), Index, IndexDef (..), SomeColumn (..) )
 import Manifest.Index
-  ( gin, btree )
+  ( gin, btree, unique )
 import Manifest.Core.Relation
   ( HasRelation(..)
   , Card(..)
