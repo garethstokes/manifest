@@ -85,7 +85,12 @@ module Manifest
   , (./)
   , Path
   , HasRelation(..)
+  , RelSpec(..)
   , Card(..)
+  , hasMany
+  , hasOpt
+  , belongsTo
+  , belongsToMaybe
     -- * Cascades (onDelete)
   , OnDelete(..)
   , CascadeRule(..)
@@ -120,7 +125,10 @@ module Manifest
   , Field
   , Pk
   , Nullable
+  , TableMeta(..)
+  , ColumnMeta(..)
   , genericTableMeta
+  , camelToSnake
   , genericRowDecoder
   , genericRowEncode
     -- * Connection pool
@@ -194,8 +202,13 @@ import Manifest.Index
   ( gin, btree, unique )
 import Manifest.Core.Relation
   ( HasRelation(..)
+  , RelSpec(..)
   , Card(..)
   , cascade
+  , hasMany
+  , hasOpt
+  , belongsTo
+  , belongsToMaybe
   )
 import Manifest.Core.Cascade
   ( OnDelete(..)
@@ -242,7 +255,10 @@ import Manifest.Core.Table
   , Nullable
   )
 import Manifest.Core.Meta
-  ( genericTableMeta
+  ( TableMeta (..)
+  , ColumnMeta (..)
+  , genericTableMeta
+  , camelToSnake
   , SqlType (..)
   )
 import Manifest.Entity
