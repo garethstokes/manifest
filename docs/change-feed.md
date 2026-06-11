@@ -14,8 +14,8 @@ driving case is the eval dashboard: when `Output` and `Score` rows are
 committed, the server pushes an SSE event and the UI refetches.
 
 This page covers the opt-in declaration, the wake-up semantics, a worked
-example, and the documented limitations. Everything here is **built and
-tested**.
+example, and the documented limitations. The semantics and API shown here
+match the tested fixtures in `test/NotifySpec.hs`.
 
 ## Why
 
@@ -78,21 +78,29 @@ and a session writes a few rows.
 
 ```haskell
 import Manifest
+import Manifest.Core.Meta (genericTableMeta)
+import Manifest.Core.Table (Field, Pk)
+import Manifest.Notify (Change (..), listenChanges)
 import Control.Concurrent (forkIO)
-import Data.ByteString.Char8 (pack, putStrLn)
+import Data.ByteString.Char8 (putStrLn)
+import GHC.Generics (Generic)
 import Prelude hiding (putStrLn)
 
 -- A minimal entity with notifyChanges enabled.
-data PingT f = Ping { pingId :: Field f PrimaryKey Int, pingMsg :: Field f "" Text }
-  deriving Generic
+data PingT f = Ping
+  { pingId  :: Field f (Pk Int)
+  , pingMsg :: Field f String
+  } deriving Generic
+
 type Ping = PingT Identity
-deriving via (Table "pings" PingT) instance Entity Ping
 
 instance Entity Ping where
+  tableMeta     = genericTableMeta @PingT "pings"
   notifyChanges = True
 
 main :: IO ()
 main = do
+  let conninfo = "postgresql:///mydb"
   pool <- newPool conninfo
 
   -- listenChanges needs a DEDICATED connection — LISTEN occupies it
@@ -103,8 +111,8 @@ main = do
              <> " key=" <> maybe "(bulk)" id (key ch))
 
   withSession pool $ withTransaction $ do
-    p <- add (Ping { pingId = 0, pingMsg = "hello" })
-    save (p { pingMsg = "world" })
+    p <- add (Ping { pingId = 0, pingMsg = "hello" } :: Ping)
+    save (p { pingMsg = "world" } :: Ping)
   -- notifications are delivered after the withTransaction commits.
 ```
 
