@@ -8,7 +8,7 @@
 -- means staleness until the next write; pollable consumers should poll as a
 -- backstop. Durable delivery is the (future) event-store's job, not this
 -- feed's. Emission lives in "Manifest.Session" behind the per-entity
--- @notifyChanges@ flag (next slice of this feature).
+-- @notifyChanges@ flag.
 module Manifest.Notify
   ( Change (..)
   , listenChanges
@@ -37,8 +37,9 @@ data Change = Change
 -- @manifest_\<table\>@ channel, then block forever dispatching notifications
 -- to the callback. The callback runs on this thread: slow callbacks delay
 -- subsequent deliveries — hand off if you do real work. Throws 'DbException'
--- on connection loss or callback exception (queued notifications are dropped).
--- Retry\/supervision is the caller's policy.
+-- on connection loss; exceptions thrown by the callback propagate unwrapped
+-- (dropping queued notifications with them). Retry\/supervision is the
+-- caller's policy.
 --
 -- Note: channel identifiers longer than 63 bytes are truncated by LISTEN while
 -- pg_notify errors — very long table names would silently never match.

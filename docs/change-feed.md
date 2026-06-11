@@ -82,6 +82,7 @@ import Manifest.Core.Meta (genericTableMeta)
 import Manifest.Core.Table (Field, Pk)
 import Manifest.Notify (Change (..), listenChanges)
 import Control.Concurrent (forkIO)
+import Data.Functor.Identity (Identity)
 import Data.ByteString.Char8 (putStrLn)
 import GHC.Generics (Generic)
 import Prelude hiding (putStrLn)
@@ -101,7 +102,7 @@ instance Entity Ping where
 main :: IO ()
 main = do
   let conninfo = "postgresql:///mydb"
-  pool <- newPool conninfo
+  pool <- newPool conninfo 4
 
   -- listenChanges needs a DEDICATED connection — LISTEN occupies it
   -- for its lifetime and must not share the pool.
@@ -144,6 +145,7 @@ and supervision are the caller's responsibility.
   notifications are hints, not data.
 - **Migrations and raw `execDb` are silent.** `migrateUp` and hand-written SQL
   run outside the `notifyChanges` path; they do not emit notifications.
-- **Concurrent work requires `-threaded`.** The callback runs on the listener's
-  OS thread. If your listener forks further threads or uses STM, compile with
-  `-threaded` so GHC's runtime can schedule them.
+- **Concurrent work benefits from `-threaded`.** The blocking libpq calls
+  (`connectdb`, the LISTEN round-trips) are safe FFI calls that stall the entire
+  non-threaded runtime while they run; compile listeners that share a process
+  with real concurrent work using `-threaded`.
