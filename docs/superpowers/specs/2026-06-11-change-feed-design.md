@@ -66,7 +66,9 @@ autocommit writes deliver immediately. Postgres also dedups identical
   consumer does, e.g. by capturing a notify flag on `CascadeRule` like
   `crChildPk` was).
 - No cross-write dedup beyond what Postgres does; N distinct writes in one
-  transaction produce N notifications at commit.
+  transaction produce N notifications at commit. The sanctioned future
+  optimization is session-level per-flush per-table coalescing — legitimate
+  exactly because notifications are hints, not data — not an outbox.
 - Migrations and raw `execDb` do not notify.
 
 ## 2. Subscription — `Manifest.Notify`

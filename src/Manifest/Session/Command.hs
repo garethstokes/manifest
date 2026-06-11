@@ -20,6 +20,10 @@ import Manifest.Session (Db, execDb, emitChange)
 
 -- | Blind single-row UPDATE by primary key. Sets the given assignments with no
 -- snapshot diff; the PK placeholder is bound LAST (after the SET values).
+--
+-- Note: a zero-row match (key not found) still emits the wake-up notify.
+-- This is intentional: under wake-up-only semantics spurious wake-ups are
+-- harmless — subscribers re-read and discover the state has not changed.
 update :: forall a. (Entity a, DbType (PrimKey a)) => Key a -> [Assign a] -> Db ()
 update key assigns = do
   let tm  = tableMeta @a
@@ -29,6 +33,10 @@ update key assigns = do
   emitChange @a (encode (unKey key))
 
 -- | Bulk DELETE over arbitrary (ANDed) conditions. No per-row identity.
+--
+-- Note: a zero-row match (no rows satisfy the conditions) still emits the
+-- wake-up notify. Spurious wake-ups are harmless under wake-up-only semantics
+-- — subscribers re-read and discover the state has not changed.
 deleteWhere :: forall a. Entity a => [Cond a] -> Db ()
 deleteWhere conds = do
   let tm                = tableMeta @a

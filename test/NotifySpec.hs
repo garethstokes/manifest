@@ -188,11 +188,13 @@ tests = group "Notify"
 
         -- All three operations in one session so the baseline is always present.
         -- add emits immediately; save and delete are flushed inside withTransaction.
-        withSession pool $ do
+        p <- withSession pool $ do
           p <- add (Ping { pingId = 0, pingMsg = "a" } :: Ping)
           withTransaction $ do
             save (p { pingMsg = "b" } :: Ping)  -- queued; flushed by withTransaction
           withTransaction $ delete p
+          pure p
+        let pingPk = BC8.pack (show (pingId p))
 
         -- 3 notifications: add, save, delete
         cs <- awaitChanges ref (n0 + 3)
@@ -200,13 +202,10 @@ tests = group "Notify"
         assertEqual "3 notifications" 3 (length tail3)
         -- All must reference table "pings"
         assertBool "all on pings" (all (\c -> table c == BC8.pack "pings") tail3)
-        -- The pk from add must appear in add and save notifications (first two)
-        let addKey  = key (head tail3)
-        let saveKey = key (tail3 !! 1)
-        let delKey  = key (tail3 !! 2)
-        assertBool "add key is Just" (addKey /= Nothing)
-        assertEqual "save key matches add key" addKey saveKey
-        assertEqual "delete key matches add key" addKey delKey
+        -- All three notifications must carry exactly the pk of the inserted row
+        assertEqual "add key is pk"    (Just pingPk) (key (head tail3))
+        assertEqual "save key is pk"   (Just pingPk) (key (tail3 !! 1))
+        assertEqual "delete key is pk" (Just pingPk) (key (tail3 !! 2))
 
   , test "unchanged save is silent" $
       withEphemeralDb' $ \conninfo pool -> do
@@ -215,12 +214,21 @@ tests = group "Notify"
         awaitWarmup pool ref
         nWarmup <- length <$> readIORef ref
 
-        -- add a row; the unchanged save (in the same session for baseline) must not emit.
-        withSession pool $ do
+        -- Deterministic assertion: the unchanged save must produce NO pg_notify
+        -- statement. Capture the log length after the add (which does emit),
+        -- then verify no new pg_notify appears after the save.
+        stmts <- withSession pool $ do
           p <- add (Ping { pingId = 0, pingMsg = "x" } :: Ping)
+          afterAdd <- statementLog
           withTransaction (save p)  -- no field changed → silent
+          afterSave <- statementLog
+          -- return only the statements added by the save (and its flush)
+          pure (drop (length afterAdd) afterSave)
+        let notifyStmts = filter (BC8.isInfixOf (BC8.pack "pg_notify") . fst) stmts
+        assertEqual "no pg_notify statement for unchanged save" [] notifyStmts
 
-        -- Wait for the add notification to land; the unchanged save must NOT add another.
+        -- Delivery-timing assertion (sentinel-bounded): the unchanged save must
+        -- NOT add a second notification after the add's notification lands.
         csAdd <- awaitChanges ref (nWarmup + 1)
         let n0 = length csAdd
 

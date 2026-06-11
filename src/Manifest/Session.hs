@@ -121,6 +121,13 @@ decodeRowDb row = case decodeRow (rowDecoder @a) row of
 -- 'execDb' so it appears in the statement log; Postgres delivers NOTIFY at
 -- COMMIT inside a transaction (and drops it on ROLLBACK), immediately
 -- otherwise. The payload is the pk as text, or empty for bulk operations.
+--
+-- Note on failure: the notify is a statement like any other. If it throws
+-- (e.g., connection death between the preceding write and this call), the
+-- exception propagates to the caller. In autocommit mode the preceding write
+-- may have already committed at that point — the write is durable but the
+-- wake-up is lost. Subscribers that cannot afford missed wake-ups should poll
+-- as a backstop (consistent with the 'listenChanges' haddock).
 emitChange :: forall a. Entity a => SqlParam -> Db ()
 emitChange pk =
   when (notifyChanges @a) $
