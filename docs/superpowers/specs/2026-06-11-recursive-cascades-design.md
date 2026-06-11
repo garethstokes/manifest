@@ -44,8 +44,8 @@ The capture MUST stay lazy (no strictness annotations, no `deriving (Eq, Show)`
 forcing in hot paths): a self-referential entity makes the structure infinite;
 the walk guards termination, construction stays cheap. `Eq`/`Show` instances
 on `CascadeRule` cannot remain derived over an infinite structure — they
-compare/show only the original three fields (hand-written instances), or are
-dropped if nothing needs them.
+compare/show only the finite fields (hand-written instances; as built, the
+four fields excluding `crChildRules`).
 
 ## 2. The delete walk
 

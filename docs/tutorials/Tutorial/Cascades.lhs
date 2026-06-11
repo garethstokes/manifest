@@ -111,4 +111,7 @@ Declare the on-delete policy once, on the parent entity's `cascadeRules`, and th
 session enforces it at flush — across the whole tree: `Cascade` removes the
 children and recurses into THEIR cascade rules (grandchildren and deeper follow),
 `SetNull` orphans them, `Restrict` blocks the delete from anywhere in the tree
-before anything is mutated. You do not write the child `DELETE`s by hand.
+before anything is mutated. You do not write the child `DELETE`s by hand. One
+caveat: on a self-referential cascade the walk stops after one level per
+declared edge, and rules of the rows deleted at that cut — including
+`Restrict` — are not applied.
