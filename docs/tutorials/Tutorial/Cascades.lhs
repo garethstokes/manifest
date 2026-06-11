@@ -108,5 +108,7 @@ cascade (Proxy @Tag) (Proxy @"tagUser") Restrict
 ```
 
 Declare the on-delete policy once, on the parent entity's `cascadeRules`, and the
-session enforces it at flush: `Cascade` removes the children, `SetNull` orphans
-them, `Restrict` blocks the delete. You do not write the child `DELETE`s by hand.
+session enforces it at flush — across the whole tree: `Cascade` removes the
+children and recurses into THEIR cascade rules (grandchildren and deeper follow),
+`SetNull` orphans them, `Restrict` blocks the delete from anywhere in the tree
+before anything is mutated. You do not write the child `DELETE`s by hand.

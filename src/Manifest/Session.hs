@@ -239,7 +239,9 @@ ruleCond r (Just (pTable, pPk, pCond)) =
   crFkColumn r <> " IN (SELECT " <> pPk <> " FROM " <> pTable <> " WHERE " <> pCond <> ")"
 
 -- | Descend into a Cascade rule's children unless its table is already on the
--- path (cycle guard: one level per declared self/mutual edge).
+-- path (cycle guard: one level per declared self/mutual edge). Rows deleted at
+-- a cut level have NONE of their own rules applied — grandchildren through the
+-- cycle are orphaned and even their 'Restrict' rules are bypassed.
 descend :: SqlParam -> [ByteString] -> Enclosing -> CascadeRule
         -> (SqlParam -> [ByteString] -> Enclosing -> [CascadeRule] -> Db ()) -> Db ()
 descend parent path enclosing r walk =

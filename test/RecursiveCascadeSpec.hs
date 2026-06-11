@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
@@ -24,7 +25,7 @@ import Data.Functor.Identity (Identity)
 
 import Manifest.Core.Cascade (OnDelete (..))
 import Manifest.Core.Meta (genericTableMeta)
-import Manifest.Core.Query (Cond)
+import Manifest.Core.Query (Cond, (==.))
 import Manifest.Core.Relation (cascade)
 import Manifest.Core.Table (Field, Nullable, Pk)
 import Manifest.Derive ()
@@ -59,6 +60,7 @@ instance Entity Team where
     [ cascade (Proxy @Member) (Proxy @"memberTeam") Cascade
     , cascade (Proxy @Badge)  (Proxy @"badgeTeam")  Restrict
     , cascade (Proxy @Locker) (Proxy @"lockerTeam") SetNull
+    , cascade (Proxy @Gear)   (Proxy @"gearTeam")   Cascade
     ]
 
 data MemberT f = Member
@@ -67,7 +69,10 @@ data MemberT f = Member
   , memberName :: Field f Text
   } deriving Generic
 type Member = MemberT Identity
-deriving via (Table "members" MemberT) instance Entity Member
+
+instance Entity Member where
+  tableMeta    = genericTableMeta @MemberT "members"
+  cascadeRules = [ cascade (Proxy @Gear) (Proxy @"gearMember") Cascade ]
 
 data BadgeT f = Badge
   { badgeId    :: Field f (Pk Int)
@@ -84,6 +89,18 @@ data LockerT f = Locker
   } deriving Generic
 type Locker = LockerT Identity
 deriving via (Table "lockers" LockerT) instance Entity Locker
+
+-- Diamond: gears are reachable via TWO Cascade chains (Team -> Gear directly,
+-- and Team -> Member -> Gear), converging on the same table at different
+-- depths. Locks the descend-before-delete invariant: neither edge may orphan.
+data GearT f = Gear
+  { gearId     :: Field f (Pk Int)
+  , gearTeam   :: Field f (Nullable Int)
+  , gearMember :: Field f (Nullable Int)
+  , gearTag    :: Field f Text
+  } deriving Generic
+type Gear = GearT Identity
+deriving via (Table "gears" GearT) instance Entity Gear
 
 -- Self-referential: a node cascades onto its own table (cycle guard target).
 data NodeT f = Node
@@ -105,6 +122,7 @@ withRecDb body = withEphemeralDb $ \pool -> do
         , "CREATE TABLE members (member_id BIGSERIAL PRIMARY KEY, member_team BIGINT NOT NULL, member_name TEXT NOT NULL)"
         , "CREATE TABLE badges  (badge_id BIGSERIAL PRIMARY KEY, badge_team BIGINT NOT NULL, badge_label TEXT NOT NULL)"
         , "CREATE TABLE lockers (locker_id BIGSERIAL PRIMARY KEY, locker_team BIGINT, locker_code TEXT NOT NULL)"
+        , "CREATE TABLE gears   (gear_id BIGSERIAL PRIMARY KEY, gear_team BIGINT, gear_member BIGINT, gear_tag TEXT NOT NULL)"
         , "CREATE TABLE nodes   (node_id BIGSERIAL PRIMARY KEY, node_parent BIGINT, node_name TEXT NOT NULL)"
         ]
   withConnection pool (\c -> mapM_ (\s -> execText c s []) ddls)
@@ -185,6 +203,18 @@ tests = group "RecursiveCascade"
           pure (map lockerTeam (sortOn lockerCode ls), teamId t3)
         assertEqual "main locker FK nulled; sibling locker FK intact"
                     [Nothing, Just t3id] fks
+  , test "diamond: two Cascade chains to one table, no orphans either way" $
+      withRecDb $ \pool -> do
+        withSession pool $ do
+          (o, t1) <- seedOrg
+          ms <- selectWhere [ #memberTeam ==. teamId t1 ]
+          let m1 = head (ms :: [Member])
+          _ <- add (Gear { gearId = 0, gearTeam = Just (teamId t1), gearMember = Nothing, gearTag = "by-team" } :: Gear)
+          _ <- add (Gear { gearId = 0, gearTeam = Nothing, gearMember = Just (memberId m1), gearTag = "by-member" } :: Gear)
+          withTransaction $ delete o
+        assertReturns "teams gone"   0 (countAll @Team pool)
+        assertReturns "members gone" 0 (countAll @Member pool)
+        assertReturns "gears gone via BOTH edges (no orphans)" 0 (countAll @Gear pool)
   , test "cycle guard: self-ref cascades one level per edge and terminates" $
       withRecDb $ \pool -> do
         names <- withSession pool $ do
