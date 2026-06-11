@@ -1,6 +1,6 @@
 # Manifest — Event Sourcing / FRP — Design Proposal
 
-**Status:** **PROPOSAL — NOT APPROVED.** Captures the direction explored while
+**Status:** **PROPOSAL — PARTIALLY SUPERSEDED.** Slice 1 (JSON support) shipped independently (2026-06-10 jsonb columns); the change feed was re-scoped onto state tables and approved as `2026-06-11-change-feed-design.md` (built first, ahead of the ES core). The ES core/projections sections remain an unapproved proposal. Captures the direction explored while
 brainstorming issue `manifest-z8h`. It is a starting point for discussion, not an
 accepted design, and nothing here is committed to be built. · **Date:** 2026-06-09
 
